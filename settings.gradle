@@ -1,0 +1,5 @@
+rootProject.name = 'jsonql'
+include 'hibernate5'
+include 'common'
+include 'hibernate6'
+

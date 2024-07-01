@@ -1,0 +1,13 @@
+plugins {
+    id 'idea'
+    id 'java-library'
+    id 'maven-publish'
+    id 'distribution'
+}
+group = 'io.github.honhimw'
+version = '1.0-SNAPSHOT'
+
+subprojects {
+    apply from: rootProject.file('buildSrc/shared.gradle')
+}
+

@@ -1,0 +1,14 @@
+apply from: rootProject.file('buildSrc/shared.gradle')
+
+def hibernateVersion = '5.6.15.Final'
+
+dependencies {
+    constraints {
+        add('implementation', "org.hibernate:hibernate-core:${hibernateVersion}")
+    }
+    implementation project(':common')
+    implementation 'org.hibernate:hibernate-core'
+    implementation 'com.zaxxer:HikariCP'
+
+    testRuntimeOnly 'com.h2database:h2:2.2.224'
+}
