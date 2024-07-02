@@ -6,12 +6,8 @@
 
 ```json lines
 {
-  "data": [
-    {
-      "table": "table to operate",
-      "operation": "select/update/insert/delete/logic_delete"
-    }
-  ],
+  "table": "table to operate",
+  "operation": "select/update/insert/delete/logic_delete"
 }
 ```
 
@@ -23,17 +19,10 @@ Parameters from the context can be referenced within the following content using
 
 ```json lines
 {
-  "data": [
-    {
-      "table": "someTable",
-      "operation": "insert",
-      "data": {
-        "title": "_{titleArg}_"
-      }
-    }
-  ],
-  "context": {
-    "titleArg": "黑丝"
+  "table": "someTable",
+  "operation": "insert",
+  "data": {
+    "title": "_{titleArg}_"
   }
 }
 ```
@@ -42,21 +31,14 @@ Parameters from the context can be referenced within the following content using
 
 ```json lines
 {
-  "data": [
-    {
-      "table": "someTable",
-      "operation": "update",
-      "effectMaxRows": 1,
-      "data": {
-        "title": "_{titleArg}_"
-      },
-      "condition": {
-        "id": 1
-      }
-    }
-  ],
-  "context": {
-    "titleArg": "黑丝"
+  "table": "someTable",
+  "operation": "update",
+  "effectMaxRows": 1,
+  "data": {
+    "title": "_{titleArg}_"
+  },
+  "condition": {
+    "id": 1
   }
 }
 ```
@@ -65,16 +47,12 @@ Parameters from the context can be referenced within the following content using
 
 ```json lines
 {
-  "data": [
-    {
-      "table": "someTable",
-      "operation": "update",
-      "effectMaxRows": 1,
-      "condition": {
-        "id": 1
-      }
-    }
-  ],
+  "table": "someTable",
+  "operation": "update",
+  "effectMaxRows": 1,
+  "condition": {
+    "id": 1
+  }
 }
 ```
 
@@ -89,21 +67,17 @@ Parameters from the context can be referenced within the following content using
 
 ``` json lines
 {
-  "data": [
-    {
-      "table": "someTable",
-      "operation": "select",
-      "page": 1,
-      "pageSize": 10,
-      "count": false,
-      "distinct": false,
-      "condition": {
-        "updateTime": {
-          "$lt": "_{serverTime}_"
-        }
-      }
+  "table": "someTable",
+  "operation": "select",
+  "page": 1,
+  "pageSize": 10,
+  "count": false,
+  "distinct": false,
+  "condition": {
+    "updateTime": {
+      "$lt": "_{serverTime}_"
     }
-  ]
+  }
 }
 ```
 
