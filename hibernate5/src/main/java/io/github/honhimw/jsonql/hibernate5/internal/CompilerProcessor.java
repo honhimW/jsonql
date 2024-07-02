@@ -162,8 +162,8 @@ class CompilerProcessor {
         boolean distinct = rootNode.at(Nodes.DISTINCT.path()).asBoolean(false);
         selectVisitor.visitDistinct(distinct);
 
-        JsonNode columnsNode = rootNode.at(Nodes.SELECTIONS.path());
-        selectVisitor.visitSelection(columnsNode.isArray() ? columnsNode.require() : null);
+        JsonNode selectionsNode = rootNode.at(Nodes.SELECTIONS.path());
+        selectVisitor.visitSelection(selectionsNode.isArray() ? selectionsNode.require() : null);
 
         ObjectNode conditionNode = getConditionNode(rootNode);
         JsonNode pageNode = rootNode.at(Nodes.PAGE.path());

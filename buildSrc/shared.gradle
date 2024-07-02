@@ -28,8 +28,8 @@ tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
 
-if (file('maven-repository.gradle').exists()) {
-    apply from: './maven-repository.gradle'
+if (rootProject.file('buildSrc/maven-repository.gradle').exists()) {
+    apply from: rootProject.file('buildSrc/maven-repository.gradle')
 } else {
     repositories {
         mavenLocal()

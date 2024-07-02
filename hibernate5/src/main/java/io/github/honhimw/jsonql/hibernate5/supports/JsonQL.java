@@ -9,7 +9,9 @@ import io.github.honhimw.jsonql.hibernate5.DMLUtils;
 import io.github.honhimw.jsonql.hibernate5.JsonQLExecutor;
 import io.github.honhimw.jsonql.hibernate5.MetadataExtractorIntegrator;
 import io.github.honhimw.jsonql.hibernate5.MutablePersistenceUnitInfo;
+import io.github.honhimw.jsonql.hibernate5.ddl.MetadataExtractor;
 import io.github.honhimw.jsonql.hibernate5.internal.JsonQLCompiler;
+import io.github.honhimw.jsonql.hibernate5.meta.MockTableMetaCache;
 import io.github.honhimw.jsonql.hibernate5.meta.SQLHolder;
 import io.github.honhimw.jsonql.hibernate5.meta.TableMetaCache;
 import lombok.Getter;
@@ -17,6 +19,7 @@ import org.hibernate.SharedSessionContract;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.jpa.HibernatePersistenceProvider;
 import org.hibernate.jpa.boot.spi.IntegratorProvider;
+import org.hibernate.mapping.Table;
 
 import javax.annotation.Nonnull;
 import javax.persistence.EntityManager;
@@ -50,6 +53,8 @@ public class JsonQL implements AutoCloseable {
 
     private final MetadataExtractorIntegrator integrator;
 
+    private final MetadataExtractor metadataExtractor;
+
     private final TableMetaCache tableMetaCache;
 
     private final JsonQLCompiler compiler;
@@ -63,7 +68,6 @@ public class JsonQL implements AutoCloseable {
         url = builder.url;
         username = builder.username;
         password = builder.password;
-        tableMetaCache = builder.tableMetaCache;
 
         dataSource = new HikariDataSource();
         dataSource.setDriverClassName(driverClassName);
@@ -98,6 +102,21 @@ public class JsonQL implements AutoCloseable {
         em = containerEntityManagerFactory.createEntityManager();
         sessionContract = em.unwrap(SharedSessionContractImplementor.class);
         MetadataExtractorIntegrator.INSTANCE = integrator;
+        metadataExtractor = new MetadataExtractor(integrator);
+
+        if (builder.tableMetaCache != null) {
+            tableMetaCache = builder.tableMetaCache;
+        } else if (builder.tables != null) {
+            Map<String, Table> tableMap = new HashMap<>();
+            for (String tableName : builder.tables) {
+                Table table = metadataExtractor.getTable(tableName);
+                tableMap.put(tableName, table);
+            }
+            tableMetaCache = new MockTableMetaCache(tableMap);
+        } else {
+            tableMetaCache = new MockTableMetaCache(new HashMap<>());
+        }
+
         compiler = new JsonQLCompiler(em, tableMetaCache);
         executor = new JsonQLExecutor(compiler);
         mapper = JsonUtils.getObjectMapper();
@@ -133,6 +152,7 @@ public class JsonQL implements AutoCloseable {
         private String username;
         private String password;
         private TableMetaCache tableMetaCache;
+        private List<String> tables;
 
         private Builder() {
         }
@@ -181,14 +201,13 @@ public class JsonQL implements AutoCloseable {
             return this;
         }
 
-        /**
-         * Sets the {@code password} and returns a reference to this Builder enabling method chaining.
-         *
-         * @param val the {@code password} to set
-         * @return a reference to this Builder
-         */
         public Builder tableMetaCache(TableMetaCache val) {
             tableMetaCache = val;
+            return this;
+        }
+
+        public Builder tables(String... tables) {
+            this.tables = Arrays.asList(tables);
             return this;
         }
 

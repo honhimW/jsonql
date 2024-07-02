@@ -1,12 +1,15 @@
 package io.github.honhimw.jsonql.hibernate5.ddl;
 
 import io.github.honhimw.jsonql.hibernate5.MetadataExtractorIntegrator;
+import io.github.honhimw.jsonql.hibernate5.TableBuilder;
+import io.github.honhimw.jsonql.hibernate5.TypeConvertUtils;
 import org.apache.commons.collections4.IteratorUtils;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.boot.model.relational.SqlStringGenerationContext;
 import org.hibernate.boot.model.relational.internal.SqlStringGenerationContextImpl;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
+import org.hibernate.mapping.Table;
 import org.hibernate.resource.transaction.spi.DdlTransactionIsolator;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
 import org.hibernate.tool.schema.extract.internal.TableInformationImpl;
@@ -94,7 +97,7 @@ public class MetadataExtractor {
             ColumnMetaData field = new ColumnMetaData(
                 columnName,
                 pkColumns.contains(columnInformation),
-                columnInformation.getTypeName(),
+                TypeConvertUtils.jdbc2SimpleType(columnInformation.getTypeCode()),
                 columnInformation.getColumnSize(),
                 columnInformation.getNullable().toBoolean(false)
             );
@@ -102,6 +105,20 @@ public class MetadataExtractor {
         });
 
         return fields;
+    }
+
+    public Table getTable(String tableName) {
+        List<ColumnMetaData> tableMeta = getTableMeta(tableName);
+        TableBuilder builder = TableBuilder.builder(tableName);
+        for (ColumnMetaData columnMetaData : tableMeta) {
+            builder.addColumn(columnBuilder -> columnBuilder
+                .name(columnMetaData.name)
+                .type(TypeConvertUtils.simpleType2Hibernate(columnMetaData.type))
+                .length(columnMetaData.length)
+                .nullable(columnMetaData.nullable)
+            );
+        }
+        return builder.build();
     }
 
     public record ColumnMetaData(String name, boolean primaryKey, String type, int length, boolean nullable) {
