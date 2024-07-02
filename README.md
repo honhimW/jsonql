@@ -74,7 +74,7 @@ Parameters from the context can be referenced within the following content using
   "count": false,
   "distinct": false,
   "condition": {
-    "updateTime": {
+    "updated_at": {
       "$lt": "_{serverTime}_"
     }
   }
