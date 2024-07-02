@@ -331,7 +331,7 @@ public class JsonQLBuilder {
 
             public WhereClause notNull(String field) {
                 ObjectNode with = objectNode(field);
-                with.putNull(Nodes.NOT_NULL.key());
+                with.putNull("!" + Nodes.IS_NULL.key());
                 return this;
             }
 

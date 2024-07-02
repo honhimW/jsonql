@@ -77,7 +77,7 @@ class WhereVisitorImpl extends WhereVisitor {
     private BiFunction<Root<?>, CriteriaBuilder, Predicate> buildSinglePredicate(String fieldName, String operatorName, Object valParam) {
         if (Objects.isNull(valParam)
             && !Nodes.IS_NULL.key().equals(operatorName)
-            && !Nodes.NOT_NULL.key().equals(operatorName)
+            && !("!" + Nodes.IS_NULL.key()).equals(operatorName)
         ) {
             return (root, cb) -> cb.isTrue(cb.literal(true));
         }
@@ -116,7 +116,6 @@ class WhereVisitorImpl extends WhereVisitor {
                     predicate = in;
                 }
                 case IS_NULL -> predicate = cb.isNull(ctx.getPath(root, fieldName));
-                case NOT_NULL -> predicate = cb.isNotNull(ctx.getPath(root, fieldName));
                 default -> throw new IllegalArgumentException("unknown operator: [%s]".formatted(operatorName));
             }
             if (not) {

@@ -46,7 +46,6 @@ public enum Nodes {
     STARTS_WITH("starts", JsonNodeType.STRING),
     ENDS_WITH("ends", JsonNodeType.STRING),
     IS_NULL("null", JsonNodeType.NULL),
-    NOT_NULL("notnull", JsonNodeType.NULL),
     AND("and", JsonNodeType.OBJECT),
     OR("or", JsonNodeType.OBJECT),
     ;
