@@ -1,5 +1,12 @@
 # JsonQL
 
+## Implementations
+
+> Currently only support [hibernate5](hibernate5).
+
+* [Hibernate5](hibernate5): Currently only supported;
+* [Hibernate6](hibernate6): Planned;
+
 ## DML
 
 ### Common fields
