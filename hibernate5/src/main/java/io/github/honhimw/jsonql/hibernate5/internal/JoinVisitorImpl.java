@@ -1,7 +1,7 @@
 package io.github.honhimw.jsonql.hibernate5.internal;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.honhimw.jsonql.common.NodeKeys;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.JoinVisitor;
 import io.github.honhimw.jsonql.hibernate5.CompileUtils;
 import io.github.honhimw.jsonql.hibernate5.TableHelper;
@@ -37,12 +37,12 @@ class JoinVisitorImpl extends JoinVisitor {
 
     @Override
     public void visitNext(ObjectNode join) {
-        String handleTable = join.at("/handleTable").asText();
-        String joinColumn = join.at("/joinColumn").asText();
-        String type = join.at("/type").asText(NodeKeys.INNER);
-        String joinTable = join.at("/table").asText();
-        String alias = join.at("/alias").asText();
-        String referencedColumn = join.at("/referencedColumn").asText();
+        String handleTable = join.at(Nodes.HANDLE_TABLE.path()).asText();
+        String joinColumn = join.at(Nodes.JOIN_COLUMN.path()).asText();
+        String type = join.at(Nodes.TYPE.path()).asText(Nodes.INNER.key());
+        String joinTable = join.at(Nodes.TABLE.path()).asText();
+        String alias = join.at(Nodes.ALIAS.path()).asText();
+        String referencedColumn = join.at(Nodes.REFERENCED_COLUMN.path()).asText();
 
         final String finalHandleTable;
         if (StringUtils.isNotBlank(handleTable)) {
@@ -54,9 +54,9 @@ class JoinVisitorImpl extends JoinVisitor {
         final String finalJoinTable = ctx.resolveTableName(joinTable);
         final String finalReferencedColumn = CompileUtils.getFinalFieldName(referencedColumn);
         final JoinType joinType;
-        switch (type) {
-            case NodeKeys.LEFT -> joinType = JoinType.LEFT;
-            case NodeKeys.RIGHT -> joinType = JoinType.RIGHT;
+        switch (Nodes.of(type, Nodes.INNER)) {
+            case LEFT -> joinType = JoinType.LEFT;
+            case RIGHT -> joinType = JoinType.RIGHT;
             default -> joinType = JoinType.INNER;
         }
 

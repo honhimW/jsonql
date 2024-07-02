@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.honhimw.jsonql.common.NodeKeys;
+import io.github.honhimw.jsonql.common.Nodes;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.Validate;
@@ -61,30 +61,30 @@ public class JsonQLBuilder {
 
         private Select(ObjectNode node) {
             this.node = node;
-            node.put(NodeKeys.OPERATION, OPERATION);
+            node.put(Nodes.OPERATION.key(), OPERATION);
         }
 
         public Select selection(Consumer<SelectionClause> selectionBuilder) {
-            ArrayNode arrayNode = node.withArray(toPointer(NodeKeys.COLUMNS));
+            ArrayNode arrayNode = node.withArray(Nodes.SELECTIONS.path());
             SelectionClause selectionClause = new SelectionClause(arrayNode);
             selectionBuilder.accept(selectionClause);
             return this;
         }
 
         public Select from(String from) {
-            node.put(NodeKeys.TABLE, from);
+            node.put(Nodes.TABLE.key(), from);
             return this;
         }
 
         public Select join(Consumer<JoinClause> joinBuilder) {
-            ArrayNode joinArrayNode = node.withArray(toPointer(NodeKeys.JOIN));
+            ArrayNode joinArrayNode = node.withArray(Nodes.JOIN.path());
             JoinClause joinClause = new JoinClause(joinArrayNode);
             joinBuilder.accept(joinClause);
             return this;
         }
 
         public Select where(Consumer<WhereClause> whereBuilder) {
-            ObjectNode where = node.withObject(toPointer(NodeKeys.CONDITION));
+            ObjectNode where = node.withObject(Nodes.CONDITION.path());
             WhereClause whereClause = new WhereClause(where);
             whereBuilder.accept(whereClause);
             return this;
@@ -92,7 +92,7 @@ public class JsonQLBuilder {
 
         public Select groupBy(Collection<String> columns) {
             if (CollectionUtils.isNotEmpty(columns)) {
-                ArrayNode groupBy = node.withArray(toPointer(NodeKeys.GROUP_BY));
+                ArrayNode groupBy = node.withArray(Nodes.GROUP_BY.path());
                 for (String column : columns) {
                     groupBy.add(column);
                 }
@@ -102,7 +102,7 @@ public class JsonQLBuilder {
 
         public Select groupBy(String... columns) {
             if (ArrayUtils.isNotEmpty(columns)) {
-                ArrayNode groupBy = node.withArray(toPointer(NodeKeys.GROUP_BY));
+                ArrayNode groupBy = node.withArray(Nodes.GROUP_BY.path());
                 for (String column : columns) {
                     groupBy.add(column);
                 }
@@ -111,35 +111,15 @@ public class JsonQLBuilder {
         }
 
         public Select count(boolean count) {
-            node.put(NodeKeys.COUNT, count);
+            node.put(Nodes.COUNT.key(), count);
             return this;
         }
 
         public Select page(int no, int size) {
             Validate.validState(no >= 0, "page no must >= 0");
             Validate.validState(0 < size && size <= 5000, "page size must between 0 and 5000");
-            node.put(NodeKeys.page, no);
-            node.put(NodeKeys.pageSize, size);
-            return this;
-        }
-
-        public Select desc(Collection<String> columns) {
-            if (CollectionUtils.isNotEmpty(columns)) {
-                ArrayNode groupBy = node.withArray(toPointer(NodeKeys.ORDER_BY_DESC));
-                for (String column : columns) {
-                    groupBy.add(column);
-                }
-            }
-            return this;
-        }
-
-        public Select desc(String... columns) {
-            if (ArrayUtils.isNotEmpty(columns)) {
-                ArrayNode groupBy = node.withArray(toPointer(NodeKeys.ORDER_BY_DESC));
-                for (String column : columns) {
-                    groupBy.add(column);
-                }
-            }
+            node.put(Nodes.PAGE.key(), no);
+            node.put(Nodes.PAGE_SIZE.key(), size);
             return this;
         }
 
@@ -185,14 +165,14 @@ public class JsonQLBuilder {
              */
             public JoinClause inner(Consumer<JoinMeta> builder) {
                 ObjectNode objectNode = join.addObject();
-                JoinMeta joinMeta = new JoinMeta(NodeKeys.INNER, objectNode);
+                JoinMeta joinMeta = new JoinMeta(Nodes.INNER.key(), objectNode);
                 builder.accept(joinMeta);
                 return this;
             }
 
             public JoinClause left(Consumer<JoinMeta> builder) {
                 ObjectNode objectNode = join.addObject();
-                JoinMeta joinMeta = new JoinMeta(NodeKeys.LEFT, objectNode);
+                JoinMeta joinMeta = new JoinMeta(Nodes.LEFT.key(), objectNode);
                 builder.accept(joinMeta);
                 return this;
             }
@@ -200,7 +180,7 @@ public class JsonQLBuilder {
             public JoinClause right(Consumer<JoinMeta> builder) {
                 ObjectNode objectNode = join.addObject();
                 JoinMeta joinMeta = new JoinMeta(
-                    NodeKeys.RIGHT, objectNode);
+                    Nodes.RIGHT.key(), objectNode);
                 builder.accept(joinMeta);
                 return this;
             }
@@ -211,28 +191,28 @@ public class JsonQLBuilder {
 
                 private JoinMeta(String joinType, ObjectNode meta) {
                     this.meta = meta;
-                    meta.put(NodeKeys.TYPE, joinType);
+                    meta.put(Nodes.TYPE.key(), joinType);
                 }
 
                 public JoinMeta handleTable(String handleTable) {
-                    meta.put(NodeKeys.HANDLE_TABLE, handleTable);
+                    meta.put(Nodes.HANDLE_TABLE.key(), handleTable);
                     return this;
                 }
 
                 public JoinMeta referencedTable(String referencedTable) {
-                    meta.put(NodeKeys.TABLE, referencedTable);
+                    meta.put(Nodes.TABLE.key(), referencedTable);
                     return this;
                 }
 
                 public JoinMeta on(String joinColumn, String referencedColumn) {
-                    meta.put(NodeKeys.JOIN_COLUMN, joinColumn);
-                    meta.put(NodeKeys.REFERENCED_COLUMN, referencedColumn);
+                    meta.put(Nodes.JOIN_COLUMN.key(), joinColumn);
+                    meta.put(Nodes.REFERENCED_COLUMN.key(), referencedColumn);
                     return this;
                 }
 
                 public JoinMeta groupBy(Collection<String> columns) {
                     if (CollectionUtils.isNotEmpty(columns)) {
-                        ArrayNode groupBy = meta.withArray(toPointer(NodeKeys.GROUP_BY));
+                        ArrayNode groupBy = meta.withArray(Nodes.GROUP_BY.path());
                         for (String column : columns) {
                             groupBy.add(column);
                         }
@@ -242,7 +222,7 @@ public class JsonQLBuilder {
 
                 public JoinMeta groupBy(String... columns) {
                     if (ArrayUtils.isNotEmpty(columns)) {
-                        ArrayNode groupBy = meta.withArray(toPointer(NodeKeys.GROUP_BY));
+                        ArrayNode groupBy = meta.withArray(Nodes.GROUP_BY.path());
                         for (String column : columns) {
                             groupBy.add(column);
                         }
@@ -284,43 +264,43 @@ public class JsonQLBuilder {
 
             public WhereClause unequal(String field, Object value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("$ne", value);
+                with.putPOJO(Nodes.EQUAL.negKey(), value);
                 return this;
             }
 
             public WhereClause gt(String field, Object value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("$gt", value);
+                with.putPOJO(Nodes.GT.key(), value);
                 return this;
             }
 
             public WhereClause ge(String field, Object value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("$ge", value);
+                with.putPOJO(Nodes.GE.key(), value);
                 return this;
             }
 
             public WhereClause lt(String field, Object value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("lt", value);
+                with.putPOJO(Nodes.LT.key(), value);
                 return this;
             }
 
             public WhereClause le(String field, Object value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("$le", value);
+                with.putPOJO(Nodes.LE.key(), value);
                 return this;
             }
 
-            public WhereClause contain(String field, String value) {
+            public WhereClause contains(String field, String value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("like", value);
+                with.putPOJO(Nodes.CONTAINS.key(), value);
                 return this;
             }
 
-            public WhereClause startWith(String field, String value) {
+            public WhereClause startsWith(String field, String value) {
                 ObjectNode with = objectNode(field);
-                with.putPOJO("like$", value);
+                with.putPOJO(Nodes.STARTS_WITH.key(), value);
                 return this;
             }
 
@@ -329,7 +309,7 @@ public class JsonQLBuilder {
                     return this;
                 }
                 ObjectNode with = objectNode(field);
-                ArrayNode arrayNode = with.withArray(toPointer("in"));
+                ArrayNode arrayNode = with.withArray(Nodes.INNER.path());
                 for (Object value : values) {
                     arrayNode.addPOJO(value);
                 }
@@ -345,13 +325,13 @@ public class JsonQLBuilder {
 
             public WhereClause isNull(String field) {
                 ObjectNode with = objectNode(field);
-                with.putNull("$eqn");
+                with.putNull(Nodes.IS_NULL.key());
                 return this;
             }
 
             public WhereClause notNull(String field) {
                 ObjectNode with = objectNode(field);
-                with.putNull("$nen");
+                with.putNull(Nodes.NOT_NULL.key());
                 return this;
             }
 
@@ -363,9 +343,9 @@ public class JsonQLBuilder {
                 ArrayNode and;
                 if (where instanceof ArrayNode arrayNode) {
                     ObjectNode objectNode = arrayNode.addObject();
-                    and = objectNode.withArray(toPointer("and"));
+                    and = objectNode.withArray(Nodes.AND.path());
                 } else {
-                    and = where.withArray(toPointer("and"));
+                    and = where.withArray(Nodes.AND.path());
                 }
                 WhereClause subWhereClause = new WhereClause(this, and);
                 sub.accept(subWhereClause);
@@ -380,9 +360,9 @@ public class JsonQLBuilder {
                 ArrayNode or;
                 if (where instanceof ArrayNode arrayNode) {
                     ObjectNode objectNode = arrayNode.addObject();
-                    or = objectNode.withArray(toPointer("or"));
+                    or = objectNode.withArray(Nodes.OR.path());
                 } else {
-                    or = where.withArray(toPointer("or"));
+                    or = where.withArray(Nodes.OR.path());
                 }
                 WhereClause subWhereClause = new WhereClause(this, or);
                 sub.accept(subWhereClause);

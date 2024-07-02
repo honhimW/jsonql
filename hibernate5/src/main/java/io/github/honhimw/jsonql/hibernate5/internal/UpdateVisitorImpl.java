@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.honhimw.jsonql.common.JsonUtils;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.UpdateVisitor;
 import io.github.honhimw.jsonql.common.visitor.WhereVisitor;
 import io.github.honhimw.jsonql.hibernate5.CompileUtils;
@@ -37,9 +38,9 @@ class UpdateVisitorImpl extends UpdateVisitor {
 
     @Override
     public void visitSyntax(JsonNode rootNode) {
-        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at("/join")), "[join] argument is not allowed in update statement, please use a simple where clause for update such as `id`.");
-        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at("/orderBy")), "[orderBy] argument is not allowed in update statement.");
-        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at("/groupBy")), "[groupBy] argument is not allowed in update statement.");
+        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at(Nodes.JOIN.path())), "[join] argument is not allowed in update statement, please use a simple where clause for update such as `id`.");
+        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at(Nodes.ORDER_BY.path())), "[orderBy] argument is not allowed in update statement.");
+        CompileUtils._assert(JsonUtils.isMissingOrNull(rootNode.at(Nodes.GROUP_BY.path())), "[groupBy] argument is not allowed in update statement.");
     }
 
     @Override

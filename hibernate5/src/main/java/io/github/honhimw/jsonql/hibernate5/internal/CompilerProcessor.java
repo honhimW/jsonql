@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.honhimw.jsonql.common.JsonUtils;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.*;
 import io.github.honhimw.jsonql.hibernate5.CompileUtils;
 import io.github.honhimw.jsonql.hibernate5.DMLUtils;
@@ -34,7 +35,7 @@ class CompilerProcessor {
 
     List<SQLHolder> process() {
         crudVisitor.visitStart();
-        TextNode operationNode = rootNode.at("/operation").require();
+        TextNode operationNode = rootNode.at(Nodes.OPERATION.path()).require();
         crudVisitor.visitOperation(operationNode);
         String operation = operationNode.asText();
         if (StringUtils.equalsIgnoreCase(operation, SelectVisitor.OPERATOR)) {
@@ -43,7 +44,7 @@ class CompilerProcessor {
             crudVisitor.visitEnd();
             DMLUtils.SelectBuilder selectBuilder = ctx.getSelectBuilder();
             DMLUtils.Tuple2<String, List<Object>> tuple = selectBuilder.jdbcQL();
-            boolean count = rootNode.at("/count").asBoolean(false);
+            boolean count = rootNode.at(Nodes.COUNT.path()).asBoolean(false);
             if (count) {
                 DMLUtils.Tuple2<String, List<Object>> countTuple = selectBuilder.countJdbcQL();
                 return List.of(new SQLHolder(tuple._1(), tuple._2()), new SQLHolder(countTuple._1(), countTuple._2()));
@@ -74,9 +75,9 @@ class CompilerProcessor {
         } else if (StringUtils.equalsIgnoreCase(operation, "logic_delete")) {
             UpdateVisitor updateVisitor = crudVisitor.visitUpdate();
             ObjectNode _rootNode = rootNode.require();
-            _rootNode.remove("data");
-            ObjectNode data = rootNode.withObject("/data");
-            data.putPOJO("delete_time", ctx.now());
+            _rootNode.remove(Nodes.DATA.key());
+            ObjectNode data = rootNode.withObject(Nodes.DATA.path());
+            data.putPOJO(CompileUtils.LOGIC_DELETE_FIELD, ctx.now());
             compileUpdate(rootNode, updateVisitor);
             crudVisitor.visitEnd();
             DMLUtils.UpdateBuilder updateBuilder = ctx.getUpdateBuilder();
@@ -89,18 +90,17 @@ class CompilerProcessor {
 
     private void compileInsert(JsonNode rootNode, InsertVisitor insertVisitor) {
         if (ctx.isEmbeddedDB()) {
-            ObjectNode dataNode = rootNode.withObject("/data");
-            dataNode.remove("create_time");
-            dataNode.remove("createTime");
-            dataNode.putPOJO("create_time", ctx.now());
+            ObjectNode dataNode = rootNode.withObject(Nodes.DATA.path());
+//            dataNode.remove("created_at");
+//            dataNode.putPOJO("created_at", ctx.now());
         }
         insertVisitor.visitStart();
-        insertVisitor.visitRoot(rootNode.at("/table").require());
-        JsonNode aliasNode = rootNode.at("/alias");
+        insertVisitor.visitRoot(rootNode.at(Nodes.TABLE.path()).require());
+        JsonNode aliasNode = rootNode.at(Nodes.ALIAS.path());
         if (aliasNode.isTextual()) {
             insertVisitor.visitRootAlias(aliasNode.require());
         }
-        ObjectNode data = rootNode.at("/data").require();
+        ObjectNode data = rootNode.at(Nodes.DATA.path()).require();
         ValuesVisitor valuesVisitor = insertVisitor.visitValues(data);
         valuesVisitor.visitStart();
         data.fields().forEachRemaining(entry -> valuesVisitor.visitNext(entry.getKey(), entry.getValue()));
@@ -110,8 +110,8 @@ class CompilerProcessor {
 
     private void compileDelete(JsonNode rootNode, DeleteVisitor deleteVisitor) {
         deleteVisitor.visitStart();
-        deleteVisitor.visitRoot(rootNode.at("/table").require());
-        JsonNode aliasNode = rootNode.at("/alias");
+        deleteVisitor.visitRoot(rootNode.at(Nodes.TABLE.path()).require());
+        JsonNode aliasNode = rootNode.at(Nodes.ALIAS.path());
         if (aliasNode.isTextual()) {
             deleteVisitor.visitRootAlias(aliasNode.require());
         }
@@ -125,20 +125,19 @@ class CompilerProcessor {
 
     private void compileUpdate(JsonNode rootNode, UpdateVisitor updateVisitor) {
         if (ctx.isEmbeddedDB()) {
-            ObjectNode dataNode = rootNode.withObject("/data");
-            dataNode.remove("update_time");
-            dataNode.remove("updateTime");
-            dataNode.putPOJO("update_time", ctx.now());
+            ObjectNode dataNode = rootNode.withObject(Nodes.DATA.path());
+//            dataNode.remove("updated_at");
+//            dataNode.putPOJO("updated_at", ctx.now());
         }
         updateVisitor.visitStart();
         updateVisitor.visitSyntax(rootNode);
-        updateVisitor.visitRoot(rootNode.at("/table").require());
-        JsonNode aliasNode = rootNode.at("/alias");
+        updateVisitor.visitRoot(rootNode.at(Nodes.TABLE.path()).require());
+        JsonNode aliasNode = rootNode.at(Nodes.ALIAS.path());
         if (aliasNode.isTextual()) {
             updateVisitor.visitRootAlias(aliasNode.require());
         }
         ObjectNode conditionNode = getConditionNode(rootNode);
-        ObjectNode dataNode = rootNode.at("/data").require();
+        ObjectNode dataNode = rootNode.at(Nodes.DATA.path()).require();
         dataNode.fields().forEachRemaining(entry -> {
             String key = entry.getKey();
             JsonNode value = entry.getValue();
@@ -154,30 +153,30 @@ class CompilerProcessor {
 
     private void compileSelect(JsonNode rootNode, SelectVisitor selectVisitor) {
         selectVisitor.visitStart();
-        selectVisitor.visitRoot(rootNode.at("/table").require());
-        JsonNode aliasNode = rootNode.at("/alias");
+        selectVisitor.visitRoot(rootNode.at(Nodes.TABLE.path()).require());
+        JsonNode aliasNode = rootNode.at(Nodes.ALIAS.path());
         if (aliasNode.isTextual()) {
             selectVisitor.visitRootAlias(aliasNode.require());
         }
 
-        boolean distinct = rootNode.at("/distinct").asBoolean(false);
+        boolean distinct = rootNode.at(Nodes.DISTINCT.path()).asBoolean(false);
         selectVisitor.visitDistinct(distinct);
 
-        JsonNode columnsNode = rootNode.at("/columns");
+        JsonNode columnsNode = rootNode.at(Nodes.SELECTIONS.path());
         selectVisitor.visitSelection(columnsNode.isArray() ? columnsNode.require() : null);
 
         ObjectNode conditionNode = getConditionNode(rootNode);
-        JsonNode pageNode = rootNode.at("/page");
-        JsonNode pageSizeNode = rootNode.at("/pageSize");
+        JsonNode pageNode = rootNode.at(Nodes.PAGE.path());
+        JsonNode pageSizeNode = rootNode.at(Nodes.PAGE_SIZE.path());
 
         if (!JsonUtils.isMissingOrNull(pageNode) && !JsonUtils.isMissingOrNull(pageSizeNode)) {
             ObjectNode _rootNode = rootNode.require();
-            _rootNode.put("count", true);
+            _rootNode.put(Nodes.COUNT.key(), true);
             selectVisitor.visitPage(pageNode.asInt(1), pageSizeNode.asInt(20));
         }
 
 
-        JsonNode joinNode = rootNode.at("/join");
+        JsonNode joinNode = rootNode.at(Nodes.JOIN.path());
         if (joinNode.isArray() && !joinNode.isEmpty()) {
             JoinVisitor joinVisitor = selectVisitor.visitJoin(joinNode);
             joinVisitor.visitStart();
@@ -187,25 +186,18 @@ class CompilerProcessor {
             joinVisitor.visitEnd();
         }
 
-        JsonNode groupByNode = rootNode.at("/groupBy");
+        JsonNode groupByNode = rootNode.at(Nodes.GROUP_BY.path());
         if (groupByNode.isArray() && !groupByNode.isEmpty()) {
             selectVisitor.visitGroupBy(groupByNode.require());
         }
 
-        JsonNode orderByDescNode = rootNode.at("/orderByDesc");
-        if (orderByDescNode.isArray() && !orderByDescNode.isEmpty()) {
-            ArrayNode orderByDescs = orderByDescNode.require();
-            ArrayNode _orderBy = rootNode.withArray("/orderBy");
-            orderByDescs.forEach(jsonNode -> _orderBy.add("-" + jsonNode.asText()));
-        }
-
-        JsonNode orderByNode = rootNode.at("/orderBy");
+        JsonNode orderByNode = rootNode.at(Nodes.ORDER_BY.path());
         if (orderByNode.isArray() && !orderByNode.isEmpty()) {
             selectVisitor.visitOrderBy(orderByNode.require());
         }
 
         boolean queryDeleted = false;
-        JsonNode queryDeletedNode = rootNode.at("/query_deleted");
+        JsonNode queryDeletedNode = rootNode.at(Nodes.QUERY_DELETED.path());
         if (queryDeletedNode.isBoolean()) {
             queryDeleted = queryDeletedNode.asBoolean();
         }
@@ -223,7 +215,7 @@ class CompilerProcessor {
         conditionNode.fields().forEachRemaining(entry -> {
             String key = entry.getKey();
             JsonNode value = entry.getValue();
-            if (StringUtils.equalsIgnoreCase(key, "and")) {
+            if (StringUtils.equalsIgnoreCase(key, Nodes.AND.key())) {
                 CompileUtils._assert(value.isArray(), "syntax error, 'and' value must be an array type value.");
                 ArrayNode arrayNode = value.require();
                 WhereVisitor _subWhereVisitor = whereVisitor.visitAnd(arrayNode);
@@ -234,7 +226,7 @@ class CompilerProcessor {
                     compileWhere(_subWhereVisitor, objectNode);
                 });
                 _subWhereVisitor.visitEnd();
-            } else if (StringUtils.equalsIgnoreCase(key, "or")) {
+            } else if (StringUtils.equalsIgnoreCase(key, Nodes.OR.key())) {
                 CompileUtils._assert(value.isArray(), "syntax error, 'or' value must be an array type value.");
                 ArrayNode arrayNode = value.require();
                 WhereVisitor _subWhereVisitor = whereVisitor.visitOr(arrayNode);
@@ -259,20 +251,20 @@ class CompilerProcessor {
                 });
                 whereVisitor.visitAfterNext(objectNode);
             } else {
-                whereVisitor.visitCondition(key, "=", CompileUtils.unwrapNode(value));
+                whereVisitor.visitCondition(key, Nodes.EQUAL.key(), CompileUtils.unwrapNode(value));
             }
         });
         whereVisitor.visitAfterNext(conditionNode);
     }
 
     private ObjectNode getConditionNode(JsonNode rootNode) {
-        JsonNode conditionNode = rootNode.at("/condition");
+        JsonNode conditionNode = rootNode.at(Nodes.CONDITION.path());
         if (conditionNode.isObject()) {
             return conditionNode.require();
         } else if (conditionNode.isMissingNode()) {
-            return rootNode.withObject("/condition");
+            return rootNode.withObject(Nodes.CONDITION.path());
         } else if (conditionNode.isNull()) {
-            return rootNode.withObject("/condition", JsonNode.OverwriteMode.NULLS, false);
+            return rootNode.withObject(Nodes.CONDITION.path(), JsonNode.OverwriteMode.NULLS, false);
         } else {
             throw new IllegalArgumentException("/condition argument must be an object.");
         }

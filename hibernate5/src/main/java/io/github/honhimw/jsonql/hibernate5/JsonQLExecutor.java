@@ -3,13 +3,12 @@ package io.github.honhimw.jsonql.hibernate5;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.honhimw.jsonql.common.JsonQLException;
 import io.github.honhimw.jsonql.common.JsonUtils;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.hibernate5.internal.JsonQLCompiler;
 import io.github.honhimw.jsonql.hibernate5.meta.SQLHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
-import org.slf4j.MDC;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -19,7 +18,7 @@ import java.util.Map;
 
 /**
  * @author hon_him
- * @since 2024-01-31
+ * @since 2024-07-02
  */
 
 @Slf4j
@@ -42,17 +41,17 @@ public class JsonQLExecutor {
         return executeDml(rootNode);
     }
 
-    public static Object execute(String json, JsonQLCompiler compiler, Connection connection) throws JsonProcessingException {
+    public static Object execute(String json, JsonQLCompiler compiler, Connection connection) throws JsonProcessingException, SQLException {
         JsonNode jsonNode = MAPPER.readTree(json);
         return execute(jsonNode, compiler, connection);
     }
 
-    public static Object execute(JsonNode rootNode, JsonQLCompiler compiler, Connection connection) {
-        String operation = rootNode.get("operation").asText();
+    public static Object execute(JsonNode rootNode, JsonQLCompiler compiler, Connection connection) throws SQLException {
+        String operation = rootNode.at(Nodes.OPERATION.path()).asText();
         return switch (operation.toLowerCase()) {
             case "insert" -> executeDmlInsert(compiler.compile(rootNode).get(0), connection);
             case "delete", "update", "logic_delete" -> {
-                int effectMaxRows = rootNode.at("/effectMaxRows").asInt(1);
+                int effectMaxRows = rootNode.at(Nodes.EFFECT_MAX_ROWS.path()).asInt(1);
                 yield executeDmlUpdate(compiler.compile(rootNode).get(0), effectMaxRows, connection);
             }
             case "select" -> executeDmlQuery(compiler.compile(rootNode), connection);
@@ -60,16 +59,13 @@ public class JsonQLExecutor {
         };
     }
 
-    /**
-     * 执行dml query操作
-     *
-     * @return 影响行数
-     */
-    public static Object executeDmlInsert(SQLHolder insert, Connection connection) {
+    public static Object executeDmlInsert(SQLHolder insert, Connection connection) throws SQLException {
+        if (log.isDebugEnabled()) {
+            log.debug(insert.toString());
+        }
         String sql = insert.sql();
         List<Object> parameters = insert.parameters();
 
-        log.info("执行sql插入语句：{},参数：{}", sql, JsonUtils.toJson(parameters));
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             for (int i = 0; i < parameters.size(); i++) {
                 statement.setObject(i + 1, parameters.get(i));
@@ -83,19 +79,17 @@ public class JsonQLExecutor {
                 return 1;
             }
             return 0;
-        } catch (SQLException e) {
-            String traceId = MDC.get("traceId");
-            log.warn("%s 服务异常 %s".formatted(traceId, e.getMessage()), e);
-            throw new JsonQLException("服务异常，请联系管理员，异常编码：%s".formatted(traceId));
         }
 
     }
 
-    public static Object executeDmlUpdate(SQLHolder update, int limit, Connection connection) {
+    public static Object executeDmlUpdate(SQLHolder update, int limit, Connection connection) throws SQLException {
+        if (log.isDebugEnabled()) {
+            log.debug(update.toString());
+        }
         String sql = update.sql();
         List<Object> parameters = update.parameters();
 
-        log.info("执行sql更新语句：{},参数：{}", sql, JsonUtils.toJson(parameters));
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             for (int i = 0; i < parameters.size(); i++) {
                 statement.setObject(i + 1, parameters.get(i));
@@ -105,7 +99,7 @@ public class JsonQLExecutor {
                 if (count <= limit) {
                     return count;
                 } else {
-                    throw new IllegalStateException("当前更新语句影响行数[%d]大于允许影响的最大行数[%d], 拒绝提交事务!".formatted(count, limit));
+                    throw new IllegalStateException("effect rows[%d] greater than limit[%d], rollback!".formatted(count, limit));
                 }
             } else if (limit == -1) {
                 return count;
@@ -115,14 +109,15 @@ public class JsonQLExecutor {
             } else {
                 throw new IllegalArgumentException("Value of `effectMaxRows` must between -1 and 2^31.");
             }
-        } catch (SQLException e) {
-            String traceId = MDC.get("traceId");
-            log.warn("%s 服务异常 %s".formatted(traceId, e.getMessage()), e);
-            throw new JsonQLException("服务异常，请联系管理员，异常编码：%s".formatted(traceId));
         }
     }
 
-    public static Object executeDmlQuery(List<SQLHolder> sqlHolders, Connection connection) {
+    public static Object executeDmlQuery(List<SQLHolder> sqlHolders, Connection connection) throws SQLException {
+        if (log.isDebugEnabled()) {
+            for (SQLHolder sqlHolder : sqlHolders) {
+                log.debug(sqlHolder.toString());
+            }
+        }
         boolean needPageSelect = sqlHolders.size() > 1;
         List<List<Map<String, Object>>> resultList = new ArrayList<>();
         for (SQLHolder sqlHolder : sqlHolders) {
@@ -134,12 +129,7 @@ public class JsonQLExecutor {
                 for (int i = 0; i < parameterCount; i++) {
                     statement.setObject(i + 1, parameters.get(i));
                 }
-                log.info("执行sql查询语句：{}, 参数：{}", sql, JsonUtils.toJson(parameters));
                 resultList.add(JDBCUtils.extractResult(statement.executeQuery()));
-            } catch (SQLException e) {
-                String traceId = MDC.get("traceId");
-                log.warn("%s 服务异常 %s".formatted(traceId, e.getMessage()), e);
-                throw new JsonQLException("服务异常，请联系管理员，异常编码：%s".formatted(traceId));
             }
         }
 

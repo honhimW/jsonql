@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
-import io.github.honhimw.jsonql.common.NodeKeys;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.JoinVisitor;
 import io.github.honhimw.jsonql.common.visitor.SelectVisitor;
 import io.github.honhimw.jsonql.common.visitor.WhereVisitor;
@@ -104,7 +104,7 @@ class SelectVisitorImpl extends SelectVisitor {
             Column logicDelete = rootTable.getColumn(Identifier.toIdentifier(CompileUtils.LOGIC_DELETE_FIELD));
             if (Objects.nonNull(logicDelete)) {
                 ObjectNode deleteCondition = where.withObject("/" + CompileUtils.LOGIC_DELETE_FIELD);
-                deleteCondition.putNull(NodeKeys.IS_NULL);
+                deleteCondition.putNull(Nodes.IS_NULL.key());
             }
         }
         return new WhereVisitorImpl(ctx, true);

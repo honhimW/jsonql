@@ -2,7 +2,9 @@ package io.github.honhimw.jsonql.hibernate5.internal;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.WhereVisitor;
+import org.apache.commons.lang3.Validate;
 
 import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.Predicate;
@@ -73,24 +75,39 @@ class WhereVisitorImpl extends WhereVisitor {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private BiFunction<Root<?>, CriteriaBuilder, Predicate> buildSinglePredicate(String fieldName, String operatorName, Object valParam) {
-        if (Objects.isNull(valParam) && !"$eqn".equalsIgnoreCase(operatorName) &&
-            !"$nen".equalsIgnoreCase(operatorName)) {
-
+        if (Objects.isNull(valParam)
+            && !Nodes.IS_NULL.key().equals(operatorName)
+            && !Nodes.NOT_NULL.key().equals(operatorName)
+        ) {
             return (root, cb) -> cb.isTrue(cb.literal(true));
+        }
+
+        boolean not;
+        String finalOperator;
+        if (operatorName.startsWith("!")) {
+            not = true;
+            finalOperator = operatorName.substring(1).trim();
+        } else {
+            not = false;
+            finalOperator = operatorName;
         }
 
         return (root, cb) -> {
             Predicate predicate;
-            switch (operatorName) {
-                case "=", "$eq" -> predicate = cb.equal(ctx.getPath(root, fieldName), valParam);
-                case "$ne" -> predicate = cb.notEqual(ctx.getPath(root, fieldName), valParam);
-                case "$gt" -> predicate = cb.greaterThan(ctx.getPath(root, fieldName), (Comparable) valParam);
-                case "$lt" -> predicate = cb.lessThan(ctx.getPath(root, fieldName), (Comparable) valParam);
-                case "$ge" -> predicate = cb.greaterThanOrEqualTo(ctx.getPath(root, fieldName), (Comparable) valParam);
-                case "$le" -> predicate = cb.lessThanOrEqualTo(ctx.getPath(root, fieldName), (Comparable) valParam);
-                case "like" -> predicate = cb.like(ctx.getPath(root, fieldName), "%" + valParam + "%");
-                case "like$" -> predicate = cb.like(ctx.getPath(root, fieldName), valParam + "%");
-                case "in" -> {
+            Nodes node = Nodes.of(finalOperator);
+            Validate.notNull(node, "Unknown Node: %s", finalOperator);
+            switch (node) {
+                case EQUAL -> predicate = cb.equal(ctx.getPath(root, fieldName), valParam);
+                case GT -> predicate = cb.greaterThan(ctx.getPath(root, fieldName), (Comparable) valParam);
+                case LT -> predicate = cb.lessThan(ctx.getPath(root, fieldName), (Comparable) valParam);
+                case GE ->
+                    predicate = cb.greaterThanOrEqualTo(ctx.getPath(root, fieldName), (Comparable) valParam);
+                case LE ->
+                    predicate = cb.lessThanOrEqualTo(ctx.getPath(root, fieldName), (Comparable) valParam);
+                case CONTAINS -> predicate = cb.like(ctx.getPath(root, fieldName), "%" + valParam + "%");
+                case STARTS_WITH -> predicate = cb.like(ctx.getPath(root, fieldName), valParam + "%");
+                case ENDS_WITH -> predicate = cb.like(ctx.getPath(root, fieldName), "%" + valParam);
+                case IN -> {
                     CriteriaBuilder.In<Object> in = cb.in(ctx.getPath(root, fieldName));
                     Collection<?> values = (Collection<?>) valParam;
                     for (Object value : values) {
@@ -98,9 +115,12 @@ class WhereVisitorImpl extends WhereVisitor {
                     }
                     predicate = in;
                 }
-                case "$eqn" -> predicate = cb.isNull(ctx.getPath(root, fieldName));
-                case "$nen" -> predicate = cb.isNotNull(ctx.getPath(root, fieldName));
+                case IS_NULL -> predicate = cb.isNull(ctx.getPath(root, fieldName));
+                case NOT_NULL -> predicate = cb.isNotNull(ctx.getPath(root, fieldName));
                 default -> throw new IllegalArgumentException("unknown operator: [%s]".formatted(operatorName));
+            }
+            if (not) {
+                predicate = cb.not(predicate);
             }
             return predicate;
         };

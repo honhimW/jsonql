@@ -28,10 +28,15 @@ tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
 
-repositories {
-    mavenLocal()
-    mavenCentral()
+if (file('maven-repository.gradle').exists()) {
+    apply from: './maven-repository.gradle'
+} else {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
 }
+
 
 dependencies {
     implementation platform('com.fasterxml.jackson:jackson-bom:2.15.2')

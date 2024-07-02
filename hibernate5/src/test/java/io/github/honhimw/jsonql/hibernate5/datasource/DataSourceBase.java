@@ -14,46 +14,43 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * @author hon_him
  * @since 2024-07-01
  */
 
-public abstract class DataSourceBase {
+public abstract class DataSourceBase extends TestsBase {
 
-    @BeforeEach
-    void init() {
-        buildDatasource();
-    }
+    protected static HikariDataSource dataSource;
 
-    @AfterEach
-    void clean() {
-        destroyDatasource();
-    }
+    protected static EntityManager em;
 
-    protected HikariDataSource dataSource;
+    protected static SharedSessionContract sessionContract;
 
-    protected EntityManager em;
+    protected static MetadataExtractorIntegrator integrator;
 
-    protected SharedSessionContract sessionContract;
+    protected static MockTableMetaCache mockTableMetaCache;
 
-    protected MetadataExtractorIntegrator integrator;
-
-    protected MockTableMetaCache mockTableMetaCache;
-
-    public void buildDatasource() {
+    public static void buildDatasource(
+        @Nonnull String driverClassName,
+        @Nonnull String url,
+        @Nullable String username,
+        @Nullable String password
+    ) {
         dataSource = new HikariDataSource();
-        dataSource.setDriverClassName("org.h2.Driver");
-        dataSource.setJdbcUrl("jdbc:h2:mem:test;MODE\\=Mysql;DB_CLOSE_DELAY\\=-1;IGNORECASE\\=FALSE;DATABASE_TO_UPPER\\=FALSE");
-//        dataSource.setUsername("username");
-//        dataSource.setPassword("password");
+        dataSource.setDriverClassName(driverClassName);
+        dataSource.setJdbcUrl(url);
+        Optional.ofNullable(username).ifPresent(dataSource::setUsername);
+        Optional.ofNullable(password).ifPresent(dataSource::setPassword);
 
         dataSource.addDataSourceProperty("databaseName", "master");
         dataSource.addDataSourceProperty("encrypt", false);
@@ -133,7 +130,7 @@ public abstract class DataSourceBase {
         em.getTransaction().begin();
     }
 
-    protected void destroyDatasource() {
+    protected static void destroyDatasource() {
         em.close();
     }
 
