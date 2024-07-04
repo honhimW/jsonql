@@ -82,7 +82,7 @@ Parameters from the context can be referenced within the following content using
   "distinct": false,
   "condition": {
     "updated_at": {
-      "$lt": "_{serverTime}_"
+      "<": "_{serverTime}_"
     }
   }
 }
