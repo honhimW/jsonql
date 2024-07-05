@@ -3,29 +3,19 @@ package io.github.honhimw.jsonql.hibernate5.supports;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zaxxer.hikari.HikariDataSource;
 import io.github.honhimw.jsonql.common.JsonUtils;
-import io.github.honhimw.jsonql.hibernate5.DMLUtils;
 import io.github.honhimw.jsonql.hibernate5.JsonQLExecutor;
-import io.github.honhimw.jsonql.hibernate5.MetadataExtractorIntegrator;
-import io.github.honhimw.jsonql.hibernate5.MutablePersistenceUnitInfo;
-import io.github.honhimw.jsonql.hibernate5.ddl.MetadataExtractor;
 import io.github.honhimw.jsonql.hibernate5.internal.JsonQLCompiler;
 import io.github.honhimw.jsonql.hibernate5.meta.MockTableMetaCache;
 import io.github.honhimw.jsonql.hibernate5.meta.SQLHolder;
 import io.github.honhimw.jsonql.hibernate5.meta.TableMetaCache;
 import lombok.Getter;
-import org.hibernate.SharedSessionContract;
-import org.hibernate.engine.spi.SharedSessionContractImplementor;
-import org.hibernate.jpa.HibernatePersistenceProvider;
-import org.hibernate.jpa.boot.spi.IntegratorProvider;
 import org.hibernate.mapping.Table;
 
-import javax.annotation.Nonnull;
-import javax.persistence.EntityManager;
-import javax.persistence.EntityManagerFactory;
-import javax.sql.DataSource;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author hon_him
@@ -37,23 +27,12 @@ public class JsonQL implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        em.close();
+        jsonQLContext.close();
     }
 
-    private final String driverClassName;
-    private final String url;
-    private final String username;
-    private final String password;
+    private final JsonQLContext jsonQLContext;
 
-    private final HikariDataSource dataSource;
-
-    private final EntityManager em;
-
-    private final SharedSessionContract sessionContract;
-
-    private final MetadataExtractorIntegrator integrator;
-
-    private final MetadataExtractor metadataExtractor;
+    private final ObjectMapper mapper;
 
     private final TableMetaCache tableMetaCache;
 
@@ -61,55 +40,22 @@ public class JsonQL implements AutoCloseable {
 
     private final JsonQLExecutor executor;
 
-    private final ObjectMapper mapper;
-
     private JsonQL(Builder builder) {
-        driverClassName = builder.driverClassName;
-        url = builder.url;
-        username = builder.username;
-        password = builder.password;
-
-        dataSource = new HikariDataSource();
-        dataSource.setDriverClassName(driverClassName);
-        dataSource.setJdbcUrl(url);
-        Optional.ofNullable(username).ifPresent(dataSource::setUsername);
-        Optional.ofNullable(password).ifPresent(dataSource::setPassword);
-
-        dataSource.addDataSourceProperty("databaseName", "master");
-        dataSource.addDataSourceProperty("encrypt", false);
-        HibernatePersistenceProvider hibernatePersistenceProvider = new HibernatePersistenceProvider();
-        MutablePersistenceUnitInfo info = new MutablePersistenceUnitInfo() {
-            @Override
-            public String getPersistenceUnitName() {
-                return "mssql";
-            }
-
-            @Override
-            public DataSource getNonJtaDataSource() {
-                return dataSource;
-            }
-
-            @Nonnull
-            @Override
-            public ClassLoader getNewTempClassLoader() {
-                return getClass().getClassLoader();
-            }
-        };
-        Map<String, Object> hibernateProperties = new HashMap<>();
-        integrator = new MetadataExtractorIntegrator();
-        hibernateProperties.put("hibernate.integrator_provider", (IntegratorProvider) () -> Collections.singletonList(integrator));
-        EntityManagerFactory containerEntityManagerFactory = hibernatePersistenceProvider.createContainerEntityManagerFactory(info, hibernateProperties);
-        em = containerEntityManagerFactory.createEntityManager();
-        sessionContract = em.unwrap(SharedSessionContractImplementor.class);
-        MetadataExtractorIntegrator.INSTANCE = integrator;
-        metadataExtractor = new MetadataExtractor(integrator);
+        jsonQLContext = JsonQLContext.builder()
+            .driverClassName(builder.driverClassName)
+            .url(builder.url)
+            .username(builder.username)
+            .password(builder.password)
+            .driverProperties(builder.driverProperties)
+            .mapper(JsonUtils.getObjectMapper())
+            .build();
 
         if (builder.tableMetaCache != null) {
             tableMetaCache = builder.tableMetaCache;
         } else if (builder.tables != null) {
             Map<String, Table> tableMap = new HashMap<>();
             for (String tableName : builder.tables) {
-                Table table = metadataExtractor.getTable(tableName);
+                Table table = jsonQLContext.getMetadataExtractor().getTable(tableName);
                 tableMap.put(tableName, table);
             }
             tableMetaCache = new MockTableMetaCache(tableMap);
@@ -117,7 +63,7 @@ public class JsonQL implements AutoCloseable {
             tableMetaCache = new MockTableMetaCache(new HashMap<>());
         }
 
-        compiler = new JsonQLCompiler(em, tableMetaCache);
+        compiler = new JsonQLCompiler(jsonQLContext.getEm(), tableMetaCache);
         executor = new JsonQLExecutor(compiler);
         mapper = JsonUtils.getObjectMapper();
     }
@@ -153,6 +99,7 @@ public class JsonQL implements AutoCloseable {
         private String password;
         private TableMetaCache tableMetaCache;
         private List<String> tables;
+        private final Map<String, Object> driverProperties = new HashMap<>();
 
         private Builder() {
         }
@@ -208,6 +155,28 @@ public class JsonQL implements AutoCloseable {
 
         public Builder tables(String... tables) {
             this.tables = Arrays.asList(tables);
+            return this;
+        }
+
+        /**
+         * Sets the {@code driverProperties} and returns a reference to this Builder enabling method chaining.
+         *
+         * @param val the {@code driverProperties} to set
+         * @return a reference to this Builder
+         */
+        public Builder driverProperties(Map<String, Object> val) {
+            driverProperties.putAll(val);
+            return this;
+        }
+
+        /**
+         * Sets the {@code driverProperties} and returns a reference to this Builder enabling method chaining.
+         *
+         * @param val the {@code driverProperties} to set
+         * @return a reference to this Builder
+         */
+        public Builder driverProperty(String key, Object val) {
+            driverProperties.put(key, val);
             return this;
         }
 
