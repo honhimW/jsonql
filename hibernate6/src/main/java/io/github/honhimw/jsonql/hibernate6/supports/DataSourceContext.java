@@ -27,7 +27,7 @@ import java.util.Optional;
  */
 
 @Getter
-public class JsonQLContext implements AutoCloseable {
+public class DataSourceContext implements AutoCloseable {
 
     private final String driverClassName;
     private final String url;
@@ -47,7 +47,7 @@ public class JsonQLContext implements AutoCloseable {
 
     private final ObjectMapper mapper;
 
-    private JsonQLContext(Builder builder) {
+    private DataSourceContext(Builder builder) {
         driverClassName = builder.driverClassName;
         url = builder.url;
         username = builder.username;
@@ -197,8 +197,8 @@ public class JsonQLContext implements AutoCloseable {
          *
          * @return a {@code JsonQLContext} built with parameters of this {@code JsonQLContext.Builder}
          */
-        public JsonQLContext build() {
-            return new JsonQLContext(this);
+        public DataSourceContext build() {
+            return new DataSourceContext(this);
         }
     }
 }

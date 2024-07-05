@@ -216,7 +216,7 @@ public class MutablePersistenceUnitInfo implements SmartPersistenceUnitInfo {
      */
     @Override
     public void addTransformer(ClassTransformer classTransformer) {
-        throw new UnsupportedOperationException("addTransformer not supported");
+//        throw new UnsupportedOperationException("addTransformer not supported");
     }
 
     /**

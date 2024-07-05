@@ -3,19 +3,14 @@ package io.github.honhimw.jsonql.hibernate5.supports;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.honhimw.jsonql.common.JsonUtils;
-import io.github.honhimw.jsonql.hibernate5.JsonQLExecutor;
 import io.github.honhimw.jsonql.hibernate5.MetadataExtractorIntegrator;
 import io.github.honhimw.jsonql.hibernate5.MutablePersistenceUnitInfo;
 import io.github.honhimw.jsonql.hibernate5.ddl.MetadataExtractor;
-import io.github.honhimw.jsonql.hibernate5.internal.JsonQLCompiler;
-import io.github.honhimw.jsonql.hibernate5.meta.MockTableMetaCache;
-import io.github.honhimw.jsonql.hibernate5.meta.TableMetaCache;
 import lombok.Getter;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.jpa.HibernatePersistenceProvider;
 import org.hibernate.jpa.boot.spi.IntegratorProvider;
-import org.hibernate.mapping.Table;
 
 import javax.annotation.Nonnull;
 import javax.persistence.EntityManager;
@@ -32,7 +27,7 @@ import java.util.Optional;
  */
 
 @Getter
-public class JsonQLContext implements AutoCloseable {
+public class DataSourceContext implements AutoCloseable {
 
     private final String driverClassName;
     private final String url;
@@ -52,7 +47,7 @@ public class JsonQLContext implements AutoCloseable {
 
     private final ObjectMapper mapper;
 
-    private JsonQLContext(Builder builder) {
+    private DataSourceContext(Builder builder) {
         driverClassName = builder.driverClassName;
         url = builder.url;
         username = builder.username;
@@ -201,8 +196,8 @@ public class JsonQLContext implements AutoCloseable {
          *
          * @return a {@code JsonQLContext} built with parameters of this {@code JsonQLContext.Builder}
          */
-        public JsonQLContext build() {
-            return new JsonQLContext(this);
+        public DataSourceContext build() {
+            return new DataSourceContext(this);
         }
     }
 }

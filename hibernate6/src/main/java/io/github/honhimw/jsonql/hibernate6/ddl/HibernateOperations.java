@@ -1,7 +1,7 @@
 package io.github.honhimw.jsonql.hibernate6.ddl;
 
 import io.github.honhimw.jsonql.hibernate6.MetadataExtractorIntegrator;
-import io.github.honhimw.jsonql.hibernate6.supports.JsonQLContext;
+import io.github.honhimw.jsonql.hibernate6.supports.DataSourceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.hibernate.boot.Metadata;
@@ -36,7 +36,7 @@ import static java.util.Collections.singletonList;
 @Slf4j
 public class HibernateOperations {
 
-    private final JsonQLContext jsonQLContext;
+    private final DataSourceContext dataSourceContext;
     private final Table table;
     private final MetadataExtractorIntegrator integrator;
     private final Metadata metadata;
@@ -48,12 +48,12 @@ public class HibernateOperations {
     private final StandardIndexExporter standardIndexExporter;
     private final SqlStringGenerationContext generationContext;
 
-    private HibernateOperations(JsonQLContext jsonQLContext, Table table, Dialect dialect) {
-        this.jsonQLContext = jsonQLContext;
+    private HibernateOperations(DataSourceContext dataSourceContext, Table table, Dialect dialect) {
+        this.dataSourceContext = dataSourceContext;
         this.table = table;
-        this.integrator = jsonQLContext.getIntegrator();
-        this.metadata = jsonQLContext.getIntegrator().getMetadata();
-        this.jdbcEnvironment = jsonQLContext.getIntegrator().getJdbcEnvironment();
+        this.integrator = dataSourceContext.getIntegrator();
+        this.metadata = dataSourceContext.getIntegrator().getMetadata();
+        this.jdbcEnvironment = dataSourceContext.getIntegrator().getJdbcEnvironment();
         if (Objects.nonNull(dialect)) {
             this.dialect = dialect;
         } else {
@@ -65,11 +65,11 @@ public class HibernateOperations {
         generationContext = SqlStringGenerationContextImpl.forTests(jdbcEnvironment);
     }
 
-    public static HibernateOperations forTable(JsonQLContext context, Table table) {
+    public static HibernateOperations forTable(DataSourceContext context, Table table) {
         return forTable(context, table, null);
     }
 
-    public static HibernateOperations forTable(JsonQLContext context, Table table, Dialect dialect) {
+    public static HibernateOperations forTable(DataSourceContext context, Table table, Dialect dialect) {
         return new HibernateOperations(context, table, dialect);
     }
 

@@ -23,14 +23,14 @@ import java.util.Map;
  */
 
 @Getter
-public class JsonQL implements AutoCloseable {
+public class JsonQLHelper implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
-        jsonQLContext.close();
+        dataSourceContext.close();
     }
 
-    private final JsonQLContext jsonQLContext;
+    private final DataSourceContext dataSourceContext;
 
     private final ObjectMapper mapper;
 
@@ -40,8 +40,8 @@ public class JsonQL implements AutoCloseable {
 
     private final JsonQLExecutor executor;
 
-    private JsonQL(Builder builder) {
-        jsonQLContext = JsonQLContext.builder()
+    private JsonQLHelper(Builder builder) {
+        dataSourceContext = DataSourceContext.builder()
             .driverClassName(builder.driverClassName)
             .url(builder.url)
             .username(builder.username)
@@ -55,7 +55,7 @@ public class JsonQL implements AutoCloseable {
         } else if (builder.tables != null) {
             Map<String, Table> tableMap = new HashMap<>();
             for (String tableName : builder.tables) {
-                Table table = jsonQLContext.getMetadataExtractor().getTable(tableName);
+                Table table = dataSourceContext.getMetadataExtractor().getTable(tableName);
                 tableMap.put(tableName, table);
             }
             tableMetaCache = new MockTableMetaCache(tableMap);
@@ -63,7 +63,7 @@ public class JsonQL implements AutoCloseable {
             tableMetaCache = new MockTableMetaCache(new HashMap<>());
         }
 
-        compiler = new JsonQLCompiler(jsonQLContext.getEm(), tableMetaCache);
+        compiler = new JsonQLCompiler(dataSourceContext.getEm(), tableMetaCache);
         executor = new JsonQLExecutor(compiler);
         mapper = JsonUtils.getObjectMapper();
     }
@@ -185,8 +185,8 @@ public class JsonQL implements AutoCloseable {
          *
          * @return a {@code JsonQL} built with parameters of this {@code JsonQL.Builder}
          */
-        public JsonQL build() {
-            return new JsonQL(this);
+        public JsonQLHelper build() {
+            return new JsonQLHelper(this);
         }
     }
 }

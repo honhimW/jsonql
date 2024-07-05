@@ -4,19 +4,19 @@
 
 ### DDL
 ```java
-import io.github.honhimw.jsonql.hibernate5.supports.JsonQL;
+import io.github.honhimw.jsonql.hibernate5.supports.JsonQLHelper;
 
 public static void createTable() {
     Mode.ModeEnum mode = Mode.ModeEnum.Oracle;
     String url = "jdbc:h2:mem:test;MODE\\=%s;DB_CLOSE_DELAY\\=-1;IGNORECASE\\=FALSE;DATABASE_TO_UPPER\\=FALSE".formatted(mode.name());
-    JsonQL jsonQL = JsonQL.builder()
+    JsonQLHelper jsonQLHelper = JsonQL.builder()
         .driverClassName("org.h2.Driver")
         .url(url)
         .build();
     Table brandIntroduction = TableSupports.get("brand_introduction");
     HibernateOperations hibernateOperations = HibernateOperations.forTable(brandIntroduction);
     List<String> create = hibernateOperations.createTable();
-    jsonQL.getSessionContract().doWork(connection -> {
+    jsonQLHelper.getSessionContract().doWork(connection -> {
         for (String sql : create) {
             connection.prepareStatement(sql).execute();
         }
