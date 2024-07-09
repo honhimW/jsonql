@@ -23,8 +23,8 @@ import org.hibernate.boot.spi.SessionFactoryOptions;
 import org.hibernate.cache.internal.DisabledCaching;
 import org.hibernate.cache.spi.CacheImplementor;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.dialect.pagination.LimitLimitHandler;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -40,13 +40,14 @@ import org.hibernate.metamodel.AttributeClassification;
 import org.hibernate.metamodel.internal.JpaMetaModelPopulationSetting;
 import org.hibernate.metamodel.internal.JpaStaticMetaModelPopulationSetting;
 import org.hibernate.metamodel.internal.MetadataContext;
+import org.hibernate.metamodel.mapping.MappingModelExpressible;
 import org.hibernate.metamodel.model.domain.internal.AttributeContainer;
 import org.hibernate.metamodel.model.domain.internal.BasicTypeImpl;
 import org.hibernate.metamodel.model.domain.internal.EntityTypeImpl;
 import org.hibernate.metamodel.model.domain.internal.SingularAttributeImpl;
 import org.hibernate.metamodel.spi.MappingMetamodelImplementor;
 import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
-import org.hibernate.query.criteria.JpaCriteriaQuery;
+import org.hibernate.query.Page;
 import org.hibernate.query.criteria.LiteralHandlingMode;
 import org.hibernate.query.criteria.internal.*;
 import org.hibernate.query.criteria.internal.compile.ExplicitParameterInfo;
@@ -55,23 +56,36 @@ import org.hibernate.query.criteria.internal.compile.RenderingContext;
 import org.hibernate.query.criteria.internal.expression.ParameterExpressionImpl;
 import org.hibernate.query.criteria.internal.expression.function.FunctionExpression;
 import org.hibernate.query.spi.Limit;
-import org.hibernate.query.sqm.SqmQuerySource;
+import org.hibernate.query.spi.QueryOptions;
+import org.hibernate.query.spi.QueryParameterBindings;
+import org.hibernate.query.spi.QueryParameterImplementor;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
+import org.hibernate.query.sqm.internal.SqmSelectionQueryImpl;
+import org.hibernate.query.sqm.internal.SqmUtil;
+import org.hibernate.query.sqm.spi.SqmParameterMappingModelResolutionAccess;
+import org.hibernate.query.sqm.sql.SqmTranslation;
+import org.hibernate.query.sqm.sql.SqmTranslator;
+import org.hibernate.query.sqm.sql.SqmTranslatorFactory;
+import org.hibernate.query.sqm.sql.StandardSqmTranslatorFactory;
 import org.hibernate.query.sqm.tree.expression.SqmParameter;
-import org.hibernate.query.sqm.tree.predicate.SqmWhereClause;
-import org.hibernate.query.sqm.tree.select.SqmQuerySpec;
 import org.hibernate.query.sqm.tree.select.SqmSelectStatement;
+import org.hibernate.query.sqm.tree.update.SqmUpdateStatement;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.Clause;
+import org.hibernate.sql.ast.SqlAstTranslator;
+import org.hibernate.sql.ast.SqlAstTranslatorFactory;
+import org.hibernate.sql.ast.tree.select.SelectStatement;
+import org.hibernate.sql.exec.internal.BaseExecutionContext;
+import org.hibernate.sql.exec.spi.JdbcOperationQuerySelect;
+import org.hibernate.sql.exec.spi.JdbcParameterBinder;
+import org.hibernate.sql.exec.spi.JdbcParameterBindings;
+import org.hibernate.sql.exec.spi.JdbcParametersList;
 import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.java.spi.UnknownBasicJavaType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.spi.TypeConfiguration;
 
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -123,7 +137,7 @@ public class DMLUtils {
     }
 
     public SelectBuilder select() {
-        return new SelectBuilder(dialect, em, entityType, firstPageNumber);
+        return new SelectBuilder(this, firstPageNumber);
     }
 
     public UpdateBuilder update() {
@@ -307,7 +321,7 @@ public class DMLUtils {
      */
     public static class SelectBuilder {
 
-        private final EntityManager em;
+        private final DMLUtils _ref;
 
         private final CriteriaBuilder cb;
 
@@ -325,12 +339,12 @@ public class DMLUtils {
 
         private QueryConsumer queryConsumer;
 
-        private SelectBuilder(Dialect dialect, EntityManager em, EntityType<Object> entityType, int firstPageNumber) {
-            this.dialect = dialect;
-            this.em = em;
-            this.entityType = entityType;
+        private SelectBuilder(DMLUtils dmlUtils, int firstPageNumber) {
+            this._ref = dmlUtils;
+            this.dialect = dmlUtils.dialect;
+            this.entityType = dmlUtils.entityType;
             this.firstPageNumber = firstPageNumber;
-            this.cb = em.getCriteriaBuilder();
+            this.cb = dmlUtils.em.getCriteriaBuilder();
         }
 
         public SelectBuilder dialect(Dialect dialect) {
@@ -368,8 +382,8 @@ public class DMLUtils {
 //            return firstRow + pageSize;
         }
 
-        public Tuple2<String, Map<String, Object>> jpaQL() {
-            return jpaQL(tupleCriteriaQuery());
+        public String hql() {
+            return hql(tupleCriteriaQuery());
         }
 
         public Tuple2<String, List<Object>> jdbcQL() {
@@ -380,8 +394,8 @@ public class DMLUtils {
             return sql(tupleCriteriaQuery(), true);
         }
 
-        public Tuple2<String, Map<String, Object>> countJpaQL() {
-            return jpaQL(countCriteriaQuery());
+        public String countJpaQL() {
+            return hql(countCriteriaQuery());
         }
 
         public Tuple2<String, List<Object>> countJdbcQL() {
@@ -418,80 +432,98 @@ public class DMLUtils {
             return query;
         }
 
-        private Tuple2<String, Map<String, Object>> jpaQL(CriteriaQuery<?> criteriaQuery) {
-            StringBuilder jpaqlQuery = new StringBuilder();
-            SharedSessionContractImplementor entityManager = (SharedSessionContractImplementor) em.getDelegate();
+        private String hql(CriteriaQuery<?> criteriaQuery) {
+            StringBuilder hqlQuery = new StringBuilder();
+            SharedSessionContractImplementor entityManager = (SharedSessionContractImplementor) _ref.em.getDelegate();
             SqmSelectStatement<?> selectStatement = (SqmSelectStatement<?>) criteriaQuery;
-            SqmQuerySpec<?> querySpec = selectStatement.getQuerySpec();
-            querySpec.appendHqlString(jpaqlQuery);
+            selectStatement.appendHqlString(hqlQuery);
             Set<SqmParameter<?>> sqmParameters = selectStatement.getSqmParameters();
             for (SqmParameter<?> sqmParameter : sqmParameters) {
                 String name = sqmParameter.getName();
                 Integer position = sqmParameter.getPosition();
             }
 
-            Tuple2<RenderingContext, List<ImplicitParameterBinding>> t2 = renderingContext(entityManager, dialect);
-            RenderingContext renderingContext = t2._1();
-            List<ImplicitParameterBinding> implicitParameterBindings = t2._2();
-            QueryStructure<?> queryStructure = criteriaQuery.getQueryStructure();
-            queryStructure.render(jpaqlQuery, renderingContext);
-            renderOrderByClause(criteriaQuery, renderingContext, jpaqlQuery);
-            String jpaQL = jpaqlQuery.toString();
+            String hql = hqlQuery.toString();
             if (log.isDebugEnabled()) {
-                log.debug("jpaQL: {}", jpaQL);
+                log.debug("hql: {}", hql);
             }
-            Map<String, Object> params = implicitParameterBindings.stream()
-                .filter(binding -> binding instanceof LiteralImplicitParameterBinding)
-                .map(binding -> (LiteralImplicitParameterBinding) binding)
-                .collect(Collectors.toMap(LiteralImplicitParameterBinding::getParameterName, LiteralImplicitParameterBinding::getLiteral));
-            return Tuples.of(jpaQL, params);
+            return hql;
         }
 
-        private Tuple2<String, List<Object>> jdbcQL(DelegateCriteriaQuery<?> criteriaQuery, boolean doLimit) {
-            Tuple2<String, Map<String, Object>> stringMapTuple2 = jpaQL(criteriaQuery);
-            String jpaQL = stringMapTuple2._1();
-            Map<String, Object> params = stringMapTuple2._2();
+        private Tuple2<String, List<Object>> jdbcQL(CriteriaQuery<?> criteriaQuery, boolean doLimit) {
+            SqlAstTranslatorFactory sqlAstTranslatorFactory = dialect.getSqlAstTranslatorFactory();
+            SqmTranslatorFactory sqmTranslatorFactory = dialect.getSqmTranslatorFactory();
 
-            Tuple2<String, List<Object>> sqlNArgs = sqlTemplate(jpaQL, params);
-            String jdbcQL = sqlNArgs._1();
-            List<Object> parameters = sqlNArgs._2();
+            SqmSelectStatement<?> sqmSelectStatement = (SqmSelectStatement<?>) criteriaQuery;
+            SqmSelectionQueryImpl<?> sqmSelectionQuery = new SqmSelectionQueryImpl<>(sqmSelectStatement, null, _ref.em.unwrap(SharedSessionContractImplementor.class));
+            sqmSelectionQuery.setPage(Page.page(pageSize, Math.max(pageNumber - firstPageNumber, 0)));
+            // Note: sqmStatement is different from sqmSelectStatement, it is a copy of sqmSelectStatement
+            SqmSelectStatement<?> sqmStatement = sqmSelectionQuery.getSqmStatement();
+            if (Objects.isNull(sqmTranslatorFactory)) {
+                sqmTranslatorFactory = new StandardSqmTranslatorFactory();
+            }
+            SqmTranslator<SelectStatement> selectTranslator = sqmTranslatorFactory.createSelectTranslator(
+                sqmStatement,
+                sqmSelectionQuery.getQueryOptions(),
+                sqmSelectionQuery.getDomainParameterXref(),
+                sqmSelectionQuery.getQueryParameterBindings(),
+                sqmSelectionQuery.getLoadQueryInfluencers(),
+                sqmSelectionQuery.getSessionFactory(),
+                false
+            );
 
+            SqmTranslation<SelectStatement> sqmTranslation = selectTranslator.translate();
+            SelectStatement sqlAst = sqmTranslation.getSqlAst();
+
+            SqlAstTranslator<JdbcOperationQuerySelect> sqlAstTranslator = sqlAstTranslatorFactory
+                .buildSelectTranslator(_ref.integrator.getSessionFactory(), sqlAst);
+
+            Map<QueryParameterImplementor<?>, Map<SqmParameter<?>, List<JdbcParametersList>>> jdbcParamsXref = SqmUtil
+                .generateJdbcParamsXref(sqmSelectionQuery.getDomainParameterXref(), sqmTranslation::getJdbcParamsBySqmParam);
+
+            JdbcParameterBindings jdbcParameterBindings = SqmUtil.createJdbcParameterBindings(
+                sqmSelectionQuery.getQueryParameterBindings(),
+                sqmSelectionQuery.getDomainParameterXref(),
+                jdbcParamsXref,
+                _ref.integrator.getSessionFactory().getRuntimeMetamodels().getMappingMetamodel(),
+                sqmTranslation.getFromClauseAccess()::findTableGroup,
+                new SqmParameterMappingModelResolutionAccess() {
+                    @Override @SuppressWarnings("unchecked")
+                    public <T> MappingModelExpressible<T> getResolvedMappingModelType(SqmParameter<T> parameter) {
+                        return (MappingModelExpressible<T>) sqmTranslation.getSqmParameterMappingModelTypeResolutions().get(parameter);
+                    }
+                },
+                _ref.em.unwrap(SharedSessionContractImplementor.class)
+            );
+
+            JdbcOperationQuerySelect translate = sqlAstTranslator.translate(jdbcParameterBindings, sqmSelectionQuery.getQueryOptions());
+            List<JdbcParameterBinder> parameterBinders = translate.getParameterBinders();
             FakePreparedStatement fakePreparedStatement = new FakePreparedStatement();
-            int col = 1;
-            LimitHandler limitHandler = dialect.getLimitHandler();
-            if (doLimit) {
-                limitHandler.processSql(jdbcQL, limit);
-                if (log.isDebugEnabled()) {
-                    log.debug("with limit SQL: {}", jdbcQL);
-                }
+            for (int i = 0; i < parameterBinders.size(); i++) {
+                JdbcParameterBinder parameterBinder = parameterBinders.get(i);
                 try {
-                    col += limitHandler.bindLimitParametersAtStartOfQuery(limit, fakePreparedStatement, col);
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
-            }
-            for (Object parameter : parameters) {
-                try {
-                    fakePreparedStatement.setObject(col, parameter);
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
-                col++;
-            }
-            if (doLimit) {
-                try {
-                    col += limitHandler.bindLimitParametersAtEndOfQuery(limit, fakePreparedStatement, col);
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
-            }
+                    parameterBinder.bindParameterValue(fakePreparedStatement, i + 1, jdbcParameterBindings, new BaseExecutionContext(_ref.em.unwrap(SharedSessionContractImplementor.class)) {
+                        @Override
+                        public QueryOptions getQueryOptions() {
+                            return sqmSelectionQuery.getQueryOptions();
+                        }
 
-            parameters = fakePreparedStatement.getParams();
+                        @Override
+                        public QueryParameterBindings getQueryParameterBindings() {
+                            return sqmSelectionQuery.getQueryParameterBindings();
+                        }
+                    });
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            List<Object> parameters = fakePreparedStatement.getParams();
+            String jdbcQL = translate.getSqlString();
             fakePreparedStatement.close();
             return Tuples.of(jdbcQL, parameters);
         }
 
-        private String sql(DelegateCriteriaQuery<?> criteriaQuery, boolean limit) {
+        private String sql(CriteriaQuery<?> criteriaQuery, boolean limit) {
             Tuple2<String, List<Object>> stringListTuple2 = jdbcQL(criteriaQuery, limit);
             String jdbcQL = stringListTuple2._1();
             List<Object> parameters = stringListTuple2._2();
@@ -504,25 +536,25 @@ public class DMLUtils {
         }
 
         public List<SelectionResult> getResult() {
-            DelegateCriteriaQuery<Tuple> tupleDelegateCriteriaQuery = tupleCriteriaQuery();
-            Selection<?> selection = tupleDelegateCriteriaQuery.getSelection();
+            CriteriaQuery<Tuple> tupleCriteriaQuery = tupleCriteriaQuery();
+            Selection<?> selection = tupleCriteriaQuery.getSelection();
             if (selection.isCompoundSelection()) {
                 List<Selection<?>> compoundSelectionItems = selection.getCompoundSelectionItems();
                 int size = compoundSelectionItems.size();
-                Tuple2<String, List<Object>> stringListTuple2 = jdbcQL(tupleDelegateCriteriaQuery, false);
+                Tuple2<String, List<Object>> stringListTuple2 = jdbcQL(tupleCriteriaQuery, false);
                 String sql = stringListTuple2._1();
                 List<Object> parameters = stringListTuple2._2();
-                Query nativeQuery = em.createNativeQuery(sql);
+                Query nativeQuery = _ref.em.createNativeQuery(sql);
                 for (int i = 1; i <= parameters.size(); i++) {
                     nativeQuery.setParameter(i, parameters.get(i - 1));
                 }
 
-                if (Objects.nonNull(rowSelection)) {
-                    if (LimitHelper.hasFirstRow(rowSelection)) {
-                        nativeQuery.setFirstResult(rowSelection.getFirstRow());
+                if (Objects.nonNull(limit)) {
+                    if (LimitLimitHandler.hasFirstRow(limit)) {
+                        nativeQuery.setFirstResult(limit.getFirstRow());
                     }
-                    if (LimitHelper.hasMaxRows(rowSelection)) {
-                        nativeQuery.setMaxResults(rowSelection.getMaxRows());
+                    if (LimitLimitHandler.hasMaxRows(limit)) {
+                        nativeQuery.setMaxResults(limit.getMaxRows());
                     }
                 }
 
@@ -543,18 +575,18 @@ public class DMLUtils {
         }
 
         public List<List<SelectionResult>> getResults() {
-            DelegateCriteriaQuery<Tuple> tupleDelegateCriteriaQuery = tupleCriteriaQuery();
-            Selection<?> selection = tupleDelegateCriteriaQuery.getSelection();
+            CriteriaQuery<Tuple> tupleCriteriaQuery = tupleCriteriaQuery();
+            Selection<?> selection = tupleCriteriaQuery.getSelection();
             AtomicReference<List<List<SelectionResult>>> ref = new AtomicReference<>();
             if (selection.isCompoundSelection()) {
                 List<Selection<?>> compoundSelectionItems = selection.getCompoundSelectionItems();
-                Tuple2<String, List<Object>> stringListTuple2 = jdbcQL(tupleDelegateCriteriaQuery, false);
+                Tuple2<String, List<Object>> stringListTuple2 = jdbcQL(tupleCriteriaQuery, false);
                 String sql = stringListTuple2._1();
-                if (Objects.nonNull(rowSelection)) {
-                    dialect.getLimitHandler().processSql(sql, rowSelection);
+                if (Objects.nonNull(limit)) {
+                    dialect.getLimitHandler().processSql(sql, limit);
                 }
                 List<Object> parameters = stringListTuple2._2();
-                SharedSessionContract sessionContract = em.unwrap(SharedSessionContract.class);
+                SharedSessionContract sessionContract = _ref.em.unwrap(SharedSessionContract.class);
 
                 sessionContract.doWork(connection -> {
                     PreparedStatement preparedStatement = connection.prepareStatement(sql);
@@ -646,7 +678,7 @@ public class DMLUtils {
 
         public Long count() {
             String sql = countSQL();
-            Query nativeQuery = em.createNativeQuery(sql);
+            Query nativeQuery = _ref.em.createNativeQuery(sql);
             Object o = nativeQuery.getSingleResult();
 
             if (o.getClass().isArray()) {
@@ -660,63 +692,25 @@ public class DMLUtils {
             }
         }
 
-        protected void renderOrderByClause(CriteriaQuery<?> criteriaQuery, RenderingContext renderingContext, StringBuilder jpaqlBuffer) {
-            SqmSelectStatement<?> _criteriaQuery = (SqmSelectStatement<?>) criteriaQuery;
-            SqmQuerySpec<?> querySpec = _criteriaQuery.getQuerySpec();
-            SqmWhereClause whereClause = querySpec.getWhereClause();
-            List<Order> orderList = criteriaQuery.getOrderList();
-            if (orderList.isEmpty()) {
-                return;
-            }
-
-            renderingContext.getClauseStack().push(Clause.ORDER);
-            try {
-                jpaqlBuffer.append(" order by ");
-                String sep = "";
-                for (Order orderSpec : orderList) {
-                    jpaqlBuffer.append(sep)
-                        .append(((Renderable) orderSpec.getExpression()).render(renderingContext))
-                        .append(orderSpec.isAscending() ? " asc" : " desc");
-                    if (orderSpec instanceof OrderImpl) {
-                        Boolean nullsFirst = ((OrderImpl) orderSpec).getNullsFirst();
-                        if (nullsFirst != null) {
-                            if (nullsFirst) {
-                                jpaqlBuffer.append(" nulls first");
-                            } else {
-                                jpaqlBuffer.append(" nulls last");
-                            }
-                        }
-                    }
-                    sep = ", ";
-                }
-            } finally {
-                renderingContext.getClauseStack().pop();
-            }
-        }
-
     }
 
     public static class UpdateBuilder {
 
-        private final EntityManager em;
+        private final DMLUtils _ref;
 
         private final CriteriaBuilder cb;
 
         private final EntityType<Object> entityType;
 
-        private final DelegateCriteriaUpdate<Object> criteriaUpdate;
-
-        private final Root<Object> root;
-
         private Dialect dialect;
 
-        private UpdateBuilder(Dialect dialect, EntityManager em, EntityType<Object> entityType) {
-            this.dialect = dialect;
-            this.em = em;
+        private UpdateConsumer updateConsumer;
+
+        private UpdateBuilder(DMLUtils dmlUtils, EntityType<Object> entityType) {
+            this._ref = dmlUtils;
+            this.dialect = _ref.dialect;
             this.entityType = entityType;
-            this.cb = em.getCriteriaBuilder();
-            this.criteriaUpdate = new DelegateCriteriaUpdate<>((CriteriaUpdateImpl<Object>) cb.createCriteriaUpdate(Object.class));
-            this.root = criteriaUpdate.from(entityType);
+            this.cb = _ref.em.getCriteriaBuilder();
         }
 
         public UpdateBuilder dialect(Dialect dialect) {
@@ -725,12 +719,8 @@ public class DMLUtils {
         }
 
         public UpdateBuilder applyUpdate(UpdateConsumer consumer) {
-            consumer.accept(root, criteriaUpdate, cb);
+            this.updateConsumer = consumer;
             return this;
-        }
-
-        public Tuple2<String, Map<String, Object>> jpaQL() {
-            return jpaQL(criteriaUpdate);
         }
 
         public Tuple2<String, List<Object>> jdbcQL() {
@@ -741,11 +731,13 @@ public class DMLUtils {
             return sql(criteriaUpdate);
         }
 
-        private Tuple2<String, Map<String, Object>> jpaQL(DelegateCriteriaUpdate<?> criteriaUpdate) {
+        public String jpaQL() {
+            CriteriaUpdate<Object> criteriaUpdate = cb.createCriteriaUpdate(Object.class);
+            Root<Object> root = criteriaUpdate.from(_ref.entityType);
+            updateConsumer.accept(root, criteriaUpdate, cb);
+            SqmUpdateStatement<?> sqmUpdateStatement = (SqmUpdateStatement<?>) criteriaUpdate;
+
             SharedSessionContractImplementor entityManager = (SharedSessionContractImplementor) em.getDelegate();
-            Tuple2<RenderingContext, List<ImplicitParameterBinding>> t2 = renderingContext(entityManager, dialect);
-            RenderingContext renderingContext = t2._1();
-            List<ImplicitParameterBinding> implicitParameterBindings = t2._2();
             String jpaQL = criteriaUpdate.renderQuery(renderingContext);
             if (log.isDebugEnabled()) {
                 log.debug("jpaQL: {}", jpaQL);
