@@ -1,6 +1,7 @@
-package org.hibernate.query.criteria.internal;
+package io.github.honhimw.jsonql.hibernate6.supports;
 
 import jakarta.persistence.criteria.Selection;
+
 import java.util.List;
 
 /**

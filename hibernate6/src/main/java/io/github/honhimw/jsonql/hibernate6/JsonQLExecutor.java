@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.honhimw.jsonql.common.JsonUtils;
 import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.hibernate6.internal.JsonQLCompiler;
-import io.github.honhimw.jsonql.hibernate6.meta.SQLHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 

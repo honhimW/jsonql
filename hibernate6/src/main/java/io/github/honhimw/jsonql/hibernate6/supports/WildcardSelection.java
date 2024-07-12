@@ -1,8 +1,7 @@
-package org.hibernate.query.criteria.internal;
-
-import org.hibernate.query.criteria.internal.compile.RenderingContext;
+package io.github.honhimw.jsonql.hibernate6.supports;
 
 import jakarta.persistence.criteria.Selection;
+
 import java.util.List;
 
 /**
@@ -10,7 +9,7 @@ import java.util.List;
  * @since 2024-06-28
  */
 
-public class WildcardSelection implements Selection<Object[]>, Renderable {
+public class WildcardSelection implements Selection<Object[]> {
 
     public static final WildcardSelection INSTANCE = new WildcardSelection();
 
@@ -39,8 +38,4 @@ public class WildcardSelection implements Selection<Object[]>, Renderable {
         return "*";
     }
 
-    @Override
-    public String render(RenderingContext renderingContext) {
-        return "*";
-    }
 }

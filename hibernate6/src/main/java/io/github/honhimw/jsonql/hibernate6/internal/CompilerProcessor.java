@@ -9,7 +9,7 @@ import io.github.honhimw.jsonql.common.Nodes;
 import io.github.honhimw.jsonql.common.visitor.*;
 import io.github.honhimw.jsonql.hibernate6.CompileUtils;
 import io.github.honhimw.jsonql.hibernate6.DMLUtils;
-import io.github.honhimw.jsonql.hibernate6.meta.SQLHolder;
+import io.github.honhimw.jsonql.hibernate6.SQLHolder;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
@@ -43,35 +43,35 @@ class CompilerProcessor {
             compileSelect(rootNode, selectVisitor);
             crudVisitor.visitEnd();
             DMLUtils.SelectBuilder selectBuilder = ctx.getSelectBuilder();
-            DMLUtils.Tuple2<String, List<Object>> tuple = selectBuilder.jdbcQL();
+            SQLHolder sqlHolder = selectBuilder.jdbcQL();
             boolean count = rootNode.at(Nodes.COUNT.path()).asBoolean(false);
             if (count) {
-                DMLUtils.Tuple2<String, List<Object>> countTuple = selectBuilder.countJdbcQL();
-                return List.of(new SQLHolder(tuple._1(), tuple._2()), new SQLHolder(countTuple._1(), countTuple._2()));
+                SQLHolder countSqlHolder = selectBuilder.countJdbcQL();
+                return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()), new SQLHolder(countSqlHolder.sql(), countSqlHolder.parameters()));
             } else {
-                return List.of(new SQLHolder(tuple._1(), tuple._2()));
+                return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()));
             }
         } else if (StringUtils.equalsIgnoreCase(operation, InsertVisitor.OPERATOR)) {
             InsertVisitor insertVisitor = crudVisitor.visitInsert();
             compileInsert(rootNode, insertVisitor);
             crudVisitor.visitEnd();
             DMLUtils.InsertBuilder insertBuilder = ctx.getInsertBuilder();
-            DMLUtils.Tuple2<String, List<Object>> tuple = insertBuilder.jdbcQL();
-            return List.of(new SQLHolder(tuple._1(), tuple._2()));
+            SQLHolder sqlHolder = insertBuilder.jdbcQL();
+            return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()));
         } else if (StringUtils.equalsIgnoreCase(operation, UpdateVisitor.OPERATOR)) {
             UpdateVisitor updateVisitor = crudVisitor.visitUpdate();
             compileUpdate(rootNode, updateVisitor);
             crudVisitor.visitEnd();
             DMLUtils.UpdateBuilder updateBuilder = ctx.getUpdateBuilder();
-            DMLUtils.Tuple2<String, List<Object>> tuple = updateBuilder.jdbcQL();
-            return List.of(new SQLHolder(tuple._1(), tuple._2()));
+            SQLHolder sqlHolder = updateBuilder.jdbcQL();
+            return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()));
         } else if (StringUtils.equalsIgnoreCase(operation, DeleteVisitor.OPERATOR)) {
             DeleteVisitor deleteVisitor = crudVisitor.visitDelete();
             compileDelete(rootNode, deleteVisitor);
             crudVisitor.visitEnd();
             DMLUtils.DeleteBuilder deleteBuilder = ctx.getDeleteBuilder();
-            DMLUtils.Tuple2<String, List<Object>> tuple = deleteBuilder.jdbcQL();
-            return List.of(new SQLHolder(tuple._1(), tuple._2()));
+            SQLHolder sqlHolder = deleteBuilder.jdbcQL();
+            return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()));
         } else if (StringUtils.equalsIgnoreCase(operation, "logic_delete")) {
             UpdateVisitor updateVisitor = crudVisitor.visitUpdate();
             ObjectNode _rootNode = rootNode.require();
@@ -81,8 +81,8 @@ class CompilerProcessor {
             compileUpdate(rootNode, updateVisitor);
             crudVisitor.visitEnd();
             DMLUtils.UpdateBuilder updateBuilder = ctx.getUpdateBuilder();
-            DMLUtils.Tuple2<String, List<Object>> tuple = updateBuilder.jdbcQL();
-            return List.of(new SQLHolder(tuple._1(), tuple._2()));
+            SQLHolder sqlHolder = updateBuilder.jdbcQL();
+            return List.of(new SQLHolder(sqlHolder.sql(), sqlHolder.parameters()));
         }
 
         throw new IllegalArgumentException("unrecognizable operation");

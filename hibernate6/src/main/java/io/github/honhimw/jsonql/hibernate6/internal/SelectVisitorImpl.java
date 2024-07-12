@@ -10,14 +10,14 @@ import io.github.honhimw.jsonql.common.visitor.SelectVisitor;
 import io.github.honhimw.jsonql.common.visitor.WhereVisitor;
 import io.github.honhimw.jsonql.hibernate6.CompileUtils;
 import io.github.honhimw.jsonql.hibernate6.DMLUtils;
+import io.github.honhimw.jsonql.hibernate6.supports.PlainExpression;
+import io.github.honhimw.jsonql.hibernate6.supports.WildcardSelection;
 import jakarta.persistence.criteria.*;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
 import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.Table;
-import org.hibernate.query.criteria.internal.PlainExpression;
-import org.hibernate.query.criteria.internal.WildcardSelection;
 
 import java.util.*;
 import java.util.regex.Matcher;

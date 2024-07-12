@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.honhimw.jsonql.common.visitor.CRUDVisitor;
 import io.github.honhimw.jsonql.hibernate6.MetadataExtractorIntegrator;
-import io.github.honhimw.jsonql.hibernate6.meta.SQLHolder;
+import io.github.honhimw.jsonql.hibernate6.SQLHolder;
 import io.github.honhimw.jsonql.hibernate6.meta.TableMetaCache;
 import lombok.Getter;
 

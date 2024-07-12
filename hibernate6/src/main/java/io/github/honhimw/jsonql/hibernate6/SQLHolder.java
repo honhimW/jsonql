@@ -1,4 +1,4 @@
-package io.github.honhimw.jsonql.hibernate6.meta;
+package io.github.honhimw.jsonql.hibernate6;
 
 import java.util.List;
 import java.util.stream.Collectors;

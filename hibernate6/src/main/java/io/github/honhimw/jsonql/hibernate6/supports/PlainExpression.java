@@ -1,4 +1,4 @@
-package org.hibernate.query.criteria.internal;
+package io.github.honhimw.jsonql.hibernate6.supports;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -20,7 +20,7 @@ public class PlainExpression extends SqmLiteral<String> {
     public static final Pattern ALIAS = Pattern.compile("((as)|(AS)) (?<alias>.+)$");
 
     public PlainExpression(CriteriaBuilder criteriaBuilder, String literal) {
-        super(literal, null,(SqmCriteriaNodeBuilder) criteriaBuilder);
+        super(literal, null, (SqmCriteriaNodeBuilder) criteriaBuilder);
     }
 
     public PlainExpression(SqmCriteriaNodeBuilder criteriaBuilder, String literal) {
@@ -31,6 +31,7 @@ public class PlainExpression extends SqmLiteral<String> {
     public String getAlias() {
         String alias = super.getAlias();
         if (StringUtils.isBlank(alias)) {
+
             Matcher matcher = ALIAS.matcher(getLiteralValue());
             if (matcher.find()) {
                 alias = matcher.group("alias");
@@ -38,10 +39,5 @@ public class PlainExpression extends SqmLiteral<String> {
             }
         }
         return alias;
-    }
-
-    @Override
-    public void appendHqlString(StringBuilder sb) {
-        sb.append(getLiteralValue());
     }
 }
