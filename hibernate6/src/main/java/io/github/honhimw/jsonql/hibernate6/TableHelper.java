@@ -24,13 +24,13 @@ public class TableHelper {
 
     private MetadataBuildingContext metadataBuildingContext;
 
-    private TableHelper(Table table) {
+    private TableHelper(Table table, MetadataBuildingContext metadataBuildingContext) {
         this._table = table;
         this.metadataBuildingContext = MetadataExtractorIntegrator.INSTANCE.getMetadataBuildingContext();
     }
 
-    public static TableHelper of(Table table) {
-        return new TableHelper(table);
+    public static TableHelper of(Table table, MetadataBuildingContext metadataBuildingContext) {
+        return new TableHelper(table, metadataBuildingContext);
     }
 
     public TableHelper addColumn(Consumer<ColumnBuilder> cbc) {

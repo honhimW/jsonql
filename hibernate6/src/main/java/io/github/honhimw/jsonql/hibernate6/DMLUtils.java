@@ -24,7 +24,6 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.UnknownKeyFor;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.boot.Metadata;
-import org.hibernate.boot.model.NamedEntityGraphDefinition;
 import org.hibernate.boot.model.relational.SqlStringGenerationContext;
 import org.hibernate.boot.spi.*;
 import org.hibernate.cache.internal.DisabledCaching;
@@ -40,19 +39,11 @@ import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.generator.Generator;
 import org.hibernate.id.Assigned;
 import org.hibernate.mapping.*;
-import org.hibernate.metamodel.AttributeClassification;
-import org.hibernate.metamodel.MappingMetamodel;
-import org.hibernate.metamodel.internal.JpaMetaModelPopulationSetting;
-import org.hibernate.metamodel.internal.JpaStaticMetaModelPopulationSetting;
-import org.hibernate.metamodel.internal.MetadataContext;
 import org.hibernate.metamodel.internal.RuntimeMetamodelsImpl;
 import org.hibernate.metamodel.mapping.MappingModelExpressible;
-import org.hibernate.metamodel.model.domain.EmbeddableDomainType;
 import org.hibernate.metamodel.model.domain.EntityDomainType;
-import org.hibernate.metamodel.model.domain.IdentifiableDomainType;
-import org.hibernate.metamodel.model.domain.ManagedDomainType;
-import org.hibernate.metamodel.model.domain.internal.AttributeContainer;
-import org.hibernate.metamodel.model.domain.internal.*;
+import org.hibernate.metamodel.model.domain.internal.JpaMetamodelImpl;
+import org.hibernate.metamodel.model.domain.internal.MappingMetamodelImpl;
 import org.hibernate.metamodel.spi.MappingMetamodelImplementor;
 import org.hibernate.metamodel.spi.RuntimeMetamodelsImplementor;
 import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
@@ -94,17 +85,8 @@ import org.hibernate.sql.ast.tree.MutationStatement;
 import org.hibernate.sql.ast.tree.select.SelectStatement;
 import org.hibernate.sql.exec.internal.BaseExecutionContext;
 import org.hibernate.sql.exec.spi.*;
-import org.hibernate.type.descriptor.java.EnumJavaType;
-import org.hibernate.type.descriptor.java.JavaType;
-import org.hibernate.type.descriptor.java.ObjectJavaType;
-import org.hibernate.type.descriptor.java.spi.DynamicModelJavaType;
-import org.hibernate.type.descriptor.java.spi.EntityJavaType;
-import org.hibernate.type.descriptor.java.spi.UnknownBasicJavaType;
-import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.spi.TypeConfiguration;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.sql.*;
 import java.util.Collection;
 import java.util.List;
@@ -185,23 +167,30 @@ public class DMLUtils {
         SessionFactoryImplementor sessionFactory = integrator.getSessionFactory();
         dialect = jdbcEnvironment.getDialect();
 
+        initEntity(table, metadataBuildingContext);
+        table.getForeignKeys().forEach((foreignKeyKey, foreignKey) -> initEntity(foreignKey.getTable(), metadataBuildingContext));
         mappingMetamodel = new MappingMetamodelImpl(sessionFactory.getTypeConfiguration(), sessionFactory.getServiceRegistry());
-        jpaMetamodel = new JpaMetamodelImpl(sessionFactory.getTypeConfiguration(), mappingMetamodel, sessionFactory.getServiceRegistry());
         runtimeModelCreationContext();
-        this.entityType = initEntity(table, metadataBuildingContext, sessionFactory, mappingMetamodel);
-        mappingMetamodel.finishInitialization(runtimeModelCreationContext());
-        Set<EntityType<?>> entities = mappingMetamodel.getEntities();
+        mappingMetamodel.finishInitialization(runtimeModelCreationContext);
         this.entityType = mappingMetamodel.entity(table.getName());
     }
 
-    private final List<PersistentClass> persistentClasses = new ArrayList<>();
+    private final Map<String, PersistentClass> persistentClasses = new HashMap<>();
 
-    private EntityTypeImpl<Object> initEntity(Table table, MetadataBuildingContext metadataBuildingContext, SessionFactoryImplementor sessionFactory, MappingMetamodelImpl mappingMetamodel) {
+    private void initEntity(Table table, MetadataBuildingContext metadataBuildingContext) {
+        if (persistentClasses.containsKey(table.getName())) {
+            return;
+        }
         RootClass rootClass = new RootClass(metadataBuildingContext);
-        persistentClasses.add(rootClass);
+        persistentClasses.put(table.getName(), rootClass);
         Table _table = new Table("dml-utils", table.getName());
         table.getColumns().forEach(_table::addColumn);
-        TableHelper.of(_table).addColumn(columnBuilder -> columnBuilder.name(RandomStringUtils.randomAlphanumeric(10)).privateKey(true).type(String.class));
+        // the hibernate do require a primary key (but we don't need it), so just generate one
+        TableHelper.of(_table, metadataBuildingContext)
+            .addColumn(columnBuilder -> columnBuilder
+                .name(RandomStringUtils.randomAlphanumeric(10))
+                .privateKey(true)
+                .type(String.class));
         rootClass.setJpaEntityName(_table.getName());
         rootClass.setEntityName(_table.getName());
         rootClass.setTable(_table);
@@ -223,98 +212,9 @@ public class DMLUtils {
             rootClass.setIdentifierProperty(property);
             rootClass.setDeclaredIdentifierProperty(property);
         }
-        EntityTypeImpl<Object> entityType = new EntityTypeImpl<>(ObjectJavaType.INSTANCE, jpaMetamodel) {
-            @Override
-            public String getHibernateEntityName() {
-                return table.getName();
-            }
-
-            @Override
-            protected boolean isIdMappingRequired() {
-                return false;
-            }
-
-        };
-        AttributeContainer.InFlightAccess<Object> inFlightAccess = entityType.getInFlightAccess();
-
-        Collection<ForeignKey> foreignKeys = table.getForeignKeys().values();
-        List<EntityTypeImpl<Object>> joinEntityTypes = foreignKeys.stream()
-            .map(foreignKey -> {
-                Table joinTable = foreignKey.getReferencedTable();
-                return initEntity(joinTable, metadataBuildingContext, sessionFactory, mappingMetamodel);
-            })
-            .toList();
-
-        List<Column> foreignColumns = foreignKeys.stream()
-            .map(Constraint::getColumns)
-            .flatMap(Collection::stream)
-            .toList();
-        Collection<Column> rootColumns = table.getColumns();
-        for (EntityTypeImpl<Object> joinEntityType : joinEntityTypes) {
-            MetadataContext metadataContext = metadataContext(entityType);
-            SingularAttributeImpl<Object, Object> attribute = new SingularAttributeImpl<>(
-                entityType,
-                joinEntityType.getName(),
-                AttributeClassification.MANY_TO_ONE,
-                joinEntityType,
-//                new UnknownBasicJavaType<>(Object.class, "anonymous"),
-                null,
-                null,
-                false,
-                false,
-                false,
-                false,
-                metadataContext
-            );
-//            Property property = new Property();
-//            property.setName(joinEntityType.getName());
-//            AttributeFactory.buildAttribute(entityType, null, metadataContext);
-            inFlightAccess.addAttribute(attribute);
-        }
-
-        for (Column rootColumn : rootColumns) {
-//            if (foreignColumns.contains(rootColumn)) {
-//                continue;
-//            }
-            PrimaryKey primaryKey = table.getPrimaryKey();
-            boolean isId = Objects.nonNull(primaryKey) && primaryKey.containsColumn(rootColumn);
-            Class<?> javaType = String.class;
-            Value value = rootColumn.getValue();
-            if (Objects.nonNull(value)) {
-                javaType = value.getType().getReturnedClass();
-            }
-            JavaType<?> _javaType = new UnknownBasicJavaType<>(javaType);
-            JdbcType _jdbcType = integrator.getDatabase().getTypeConfiguration().getJdbcTypeRegistry().getDescriptor(TypeConvertUtils.type2jdbc(javaType).getVendorTypeNumber());
-            SingularAttributeImpl<Object, ?> attribute = new SingularAttributeImpl<>(
-                entityType,
-                rootColumn.getName(),
-                AttributeClassification.BASIC,
-                new BasicTypeImpl<>(_javaType, _jdbcType),
-                null,
-                null,
-                isId,
-                false,
-                rootColumn.isNullable(),
-                false,
-                metadataContext(entityType)
-            );
-            inFlightAccess.addAttribute(attribute);
-        }
-        return entityType;
     }
 
-    private MetadataContext metadataContext(EntityTypeImpl<?> entityType) {
-        return new MetadataContext(
-            integrator.getSessionFactory().getJpaMetamodel(),
-            integrator.getSessionFactory().getMappingMetamodel(),
-            ((MetadataImplementor) integrator.getMetadata()),
-            JpaStaticMetaModelPopulationSetting.DISABLED,
-            JpaMetaModelPopulationSetting.DISABLED,
-            runtimeModelCreationContext()
-        );
-    }
-
-    private RuntimeModelCreationContext runtimeModelCreationContext() {
+    private void runtimeModelCreationContext() {
         if (Objects.isNull(runtimeModelCreationContext)) {
             runtimeModelCreationContext = new RuntimeModelCreationContext() {
                 @Override
@@ -330,14 +230,6 @@ public class DMLUtils {
                         public @UnknownKeyFor @NonNull @Initialized Generator getGenerator(@UnknownKeyFor @NonNull @Initialized String rootEntityName) {
                             return new Assigned();
                         }
-
-                        @Override
-                        public @UnknownKeyFor @NonNull @Initialized RuntimeMetamodelsImplementor getRuntimeMetamodels() {
-                            RuntimeMetamodelsImpl runtimeMetamodels = new RuntimeMetamodelsImpl();
-                            runtimeMetamodels.setMappingMetamodel(mappingMetamodel);
-                            runtimeMetamodels.setJpaMetamodel(jpaMetamodel);
-                            return runtimeMetamodels;
-                        }
                     };
                 }
 
@@ -346,7 +238,7 @@ public class DMLUtils {
                     return new AbstractDelegatingMetadata((MetadataImplementor) integrator.getMetadata()) {
                         @Override
                         public Collection<PersistentClass> getEntityBindings() {
-                            return persistentClasses;
+                            return persistentClasses.values();
                         }
 
                         @Override
@@ -413,7 +305,6 @@ public class DMLUtils {
                 }
             };
         }
-        return runtimeModelCreationContext;
     }
 
     /**

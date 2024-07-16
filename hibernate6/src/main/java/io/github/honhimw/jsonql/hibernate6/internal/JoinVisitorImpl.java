@@ -65,7 +65,7 @@ class JoinVisitorImpl extends JoinVisitor {
         final Table _handleTable = tableMap.computeIfAbsent(finalHandleTable, s -> ctx.getTableMetaCache().buildTable(finalHandleTable));
         final Table _joinTable = tableMap.computeIfAbsent(finalJoinTable, s -> ctx.getTableMetaCache().buildTable(finalJoinTable));
 
-        TableHelper tableHelper = TableHelper.of(_handleTable);
+        TableHelper tableHelper = TableHelper.of(_handleTable, ctx.getIntegrator().getMetadataBuildingContext());
         tableHelper.addForeign(_joinTable, Map.of(finalJoinColumn, finalReferencedColumn));
 
         final boolean isRoot = _handleTable == ctx.getRootTable();

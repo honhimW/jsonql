@@ -32,11 +32,24 @@ public class DMLUtilTests extends DataSourceBase {
 
     @Test
     @SneakyThrows
-    void dml() {
+    void dmlSelect() {
         Table table = TableSupports.get("brand_introduction");
         DMLUtils instance = DMLUtils.getInstance(em, table);
         SQLHolder sqlHolder = instance.select().applyQuery((root, query, cb) -> {
             query.select(root.get("title"))
+                .where(cb.equal(root.get("id"), "1"));
+        }).jdbcQL();
+        log.info(sqlHolder.toString());
+    }
+
+    @Test
+    @SneakyThrows
+    void dmlUpdate() {
+        Table table = TableSupports.get("brand_introduction");
+        DMLUtils instance = DMLUtils.getInstance(em, table);
+        SQLHolder sqlHolder = instance.update().applyUpdate((root, update, cb) -> {
+            update.set(root.get("title"), "title")
+                .set(root.get("content"), "content")
                 .where(cb.equal(root.get("id"), "1"));
         }).jdbcQL();
         log.info(sqlHolder.toString());
