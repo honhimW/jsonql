@@ -7,6 +7,7 @@ import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.*;
+import org.hibernate.type.Type;
 
 import java.sql.JDBCType;
 import java.sql.SQLType;
@@ -121,7 +122,7 @@ public class TableBuilder {
     }
 
     public Table build() {
-        Table table = new Table(name);
+        Table table = new Table(name, name);
         table.setComment(comment);
 
         PrimaryKey primaryKey = new PrimaryKey(table);
@@ -211,7 +212,7 @@ public class TableBuilder {
         return table;
     }
 
-    private record Col(String name, JDBCType type, Integer length, boolean nullable, String defaultValue, String comment,
+    private record Col(String name, Type type, Integer length, boolean nullable, String defaultValue, String comment,
                        Boolean privateKey, Boolean generated) {
     }
 
@@ -219,7 +220,7 @@ public class TableBuilder {
 
         private String name;
 
-        private JDBCType type;
+        private Type type;
 
         private Integer length;
 
@@ -242,25 +243,32 @@ public class TableBuilder {
         }
 
         public ColumnBuilder type(JDBCType type) {
-            this.type = type;
+            this.type = TypeConvertUtils.jdbc2HType(type);
             return this;
         }
 
         public ColumnBuilder type(int type) {
-            this.type = JDBCType.valueOf(type);
+            this.type = TypeConvertUtils.jdbc2HType(type);
             return this;
         }
 
         public ColumnBuilder type(Class<?> type) {
             if (Objects.nonNull(type)) {
-                this.type = TypeConvertUtils.type2jdbc(type);
+                this.type = TypeConvertUtils.jdbc2HType(TypeConvertUtils.type2jdbc(type));
             }
             return this;
         }
 
         public ColumnBuilder type(SQLType type) {
             if (Objects.nonNull(type)) {
-                this.type = JDBCType.valueOf(type.getVendorTypeNumber());
+                this.type = TypeConvertUtils.jdbc2HType(type.getVendorTypeNumber());
+            }
+            return this;
+        }
+
+        public ColumnBuilder type(Type type) {
+            if (Objects.nonNull(type)) {
+                this.type = type;
             }
             return this;
         }

@@ -2,6 +2,9 @@ package io.github.honhimw.jsonql.hibernate6;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.checkerframework.checker.initialization.qual.Initialized;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.UnknownKeyFor;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.internal.BootstrapContextImpl;
 import org.hibernate.boot.internal.InFlightMetadataCollectorImpl;
@@ -15,6 +18,7 @@ import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.boot.spi.MetadataBuildingOptions;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.integrator.spi.Integrator;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
 
@@ -56,11 +60,11 @@ public class MetadataExtractorIntegrator implements org.hibernate.integrator.spi
     private MetadataBuildingContext metadataBuildingContext;
 
     @Override
-    public void integrate(Metadata metadata, SessionFactoryImplementor sessionFactory, SessionFactoryServiceRegistry serviceRegistry) {
-        ServiceRegistry parentServiceRegistry = serviceRegistry.getParentServiceRegistry();
-        if (parentServiceRegistry instanceof StandardServiceRegistry standardServiceRegistry) {
-            this.bootstrapContext = new BootstrapContextImpl(standardServiceRegistry, new MetadataBuilderImpl.MetadataBuildingOptionsImpl(standardServiceRegistry));
-        }
+    public void integrate(
+        @UnknownKeyFor @NonNull @Initialized Metadata metadata,
+        @UnknownKeyFor @NonNull @Initialized BootstrapContext bootstrapContext,
+        @UnknownKeyFor @NonNull @Initialized SessionFactoryImplementor sessionFactory) {
+        this.bootstrapContext = bootstrapContext;
         this.sessionFactory = sessionFactory;
         this.database = metadata.getDatabase();
         this.metadata = metadata;

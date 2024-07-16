@@ -16,35 +16,45 @@ import jakarta.persistence.metamodel.EntityType;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
+import org.checkerframework.checker.initialization.qual.Initialized;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.UnknownKeyFor;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.boot.Metadata;
+import org.hibernate.boot.model.NamedEntityGraphDefinition;
 import org.hibernate.boot.model.relational.SqlStringGenerationContext;
-import org.hibernate.boot.spi.BootstrapContext;
-import org.hibernate.boot.spi.MetadataBuildingContext;
-import org.hibernate.boot.spi.MetadataImplementor;
-import org.hibernate.boot.spi.SessionFactoryOptions;
+import org.hibernate.boot.spi.*;
 import org.hibernate.cache.internal.DisabledCaching;
 import org.hibernate.cache.spi.CacheImplementor;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.pagination.LimitLimitHandler;
+import org.hibernate.engine.OptimisticLockStyle;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
+import org.hibernate.engine.spi.SessionFactoryDelegatingImpl;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.generator.Generator;
+import org.hibernate.id.Assigned;
 import org.hibernate.mapping.*;
 import org.hibernate.metamodel.AttributeClassification;
+import org.hibernate.metamodel.MappingMetamodel;
 import org.hibernate.metamodel.internal.JpaMetaModelPopulationSetting;
 import org.hibernate.metamodel.internal.JpaStaticMetaModelPopulationSetting;
 import org.hibernate.metamodel.internal.MetadataContext;
+import org.hibernate.metamodel.internal.RuntimeMetamodelsImpl;
 import org.hibernate.metamodel.mapping.MappingModelExpressible;
+import org.hibernate.metamodel.model.domain.EmbeddableDomainType;
 import org.hibernate.metamodel.model.domain.EntityDomainType;
+import org.hibernate.metamodel.model.domain.IdentifiableDomainType;
+import org.hibernate.metamodel.model.domain.ManagedDomainType;
 import org.hibernate.metamodel.model.domain.internal.AttributeContainer;
-import org.hibernate.metamodel.model.domain.internal.BasicTypeImpl;
-import org.hibernate.metamodel.model.domain.internal.EntityTypeImpl;
-import org.hibernate.metamodel.model.domain.internal.SingularAttributeImpl;
+import org.hibernate.metamodel.model.domain.internal.*;
 import org.hibernate.metamodel.spi.MappingMetamodelImplementor;
+import org.hibernate.metamodel.spi.RuntimeMetamodelsImplementor;
 import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
 import org.hibernate.query.Page;
 import org.hibernate.query.criteria.JpaCriteriaInsertValues;
@@ -79,15 +89,22 @@ import org.hibernate.query.sqm.tree.update.SqmUpdateStatement;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.sql.ast.SqlAstTranslator;
 import org.hibernate.sql.ast.SqlAstTranslatorFactory;
+import org.hibernate.sql.ast.spi.SqlAstCreationContext;
 import org.hibernate.sql.ast.tree.MutationStatement;
 import org.hibernate.sql.ast.tree.select.SelectStatement;
 import org.hibernate.sql.exec.internal.BaseExecutionContext;
 import org.hibernate.sql.exec.spi.*;
+import org.hibernate.type.descriptor.java.EnumJavaType;
 import org.hibernate.type.descriptor.java.JavaType;
+import org.hibernate.type.descriptor.java.ObjectJavaType;
+import org.hibernate.type.descriptor.java.spi.DynamicModelJavaType;
+import org.hibernate.type.descriptor.java.spi.EntityJavaType;
 import org.hibernate.type.descriptor.java.spi.UnknownBasicJavaType;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.spi.TypeConfiguration;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.sql.*;
 import java.util.Collection;
 import java.util.List;
@@ -116,6 +133,12 @@ public class DMLUtils {
     private Dialect dialect;
 
     private MetadataExtractorIntegrator integrator;
+
+    private RuntimeModelCreationContext runtimeModelCreationContext;
+
+    private MappingMetamodelImpl mappingMetamodel;
+
+    private JpaMetamodelImpl jpaMetamodel;
 
     @Setter
     private int firstPageNumber = 1;
@@ -162,20 +185,63 @@ public class DMLUtils {
         SessionFactoryImplementor sessionFactory = integrator.getSessionFactory();
         dialect = jdbcEnvironment.getDialect();
 
-        this.entityType = initEntity(table, metadataBuildingContext, sessionFactory);
+        mappingMetamodel = new MappingMetamodelImpl(sessionFactory.getTypeConfiguration(), sessionFactory.getServiceRegistry());
+        jpaMetamodel = new JpaMetamodelImpl(sessionFactory.getTypeConfiguration(), mappingMetamodel, sessionFactory.getServiceRegistry());
+        runtimeModelCreationContext();
+        this.entityType = initEntity(table, metadataBuildingContext, sessionFactory, mappingMetamodel);
+        mappingMetamodel.finishInitialization(runtimeModelCreationContext());
+        Set<EntityType<?>> entities = mappingMetamodel.getEntities();
+        this.entityType = mappingMetamodel.entity(table.getName());
     }
 
-    private EntityTypeImpl<Object> initEntity(Table table, MetadataBuildingContext metadataBuildingContext, SessionFactoryImplementor sessionFactory) {
+    private final List<PersistentClass> persistentClasses = new ArrayList<>();
+
+    private EntityTypeImpl<Object> initEntity(Table table, MetadataBuildingContext metadataBuildingContext, SessionFactoryImplementor sessionFactory, MappingMetamodelImpl mappingMetamodel) {
         RootClass rootClass = new RootClass(metadataBuildingContext);
-        rootClass.setJpaEntityName(table.getName());
-        EntityTypeImpl<Object> entityType = new EntityTypeImpl<>(null, null, rootClass, sessionFactory.getJpaMetamodel());
+        persistentClasses.add(rootClass);
+        Table _table = new Table("dml-utils", table.getName());
+        table.getColumns().forEach(_table::addColumn);
+        TableHelper.of(_table).addColumn(columnBuilder -> columnBuilder.name(RandomStringUtils.randomAlphanumeric(10)).privateKey(true).type(String.class));
+        rootClass.setJpaEntityName(_table.getName());
+        rootClass.setEntityName(_table.getName());
+        rootClass.setTable(_table);
+        rootClass.setOptimisticLockStyle(OptimisticLockStyle.NONE);
+        _table.getColumns().forEach(column -> {
+            Property property = new Property();
+            property.setName(column.getName());
+            property.setValue(column.getValue());
+            rootClass.addProperty(property);
+        });
+
+        PrimaryKey _pk = _table.getPrimaryKey();
+        Column column = _pk.getColumn(0);
+        if (column.getValue() instanceof KeyValue kv) {
+            rootClass.setIdentifier(kv);
+            Property property = new Property();
+            property.setName(column.getName());
+            property.setValue(kv);
+            rootClass.setIdentifierProperty(property);
+            rootClass.setDeclaredIdentifierProperty(property);
+        }
+        EntityTypeImpl<Object> entityType = new EntityTypeImpl<>(ObjectJavaType.INSTANCE, jpaMetamodel) {
+            @Override
+            public String getHibernateEntityName() {
+                return table.getName();
+            }
+
+            @Override
+            protected boolean isIdMappingRequired() {
+                return false;
+            }
+
+        };
         AttributeContainer.InFlightAccess<Object> inFlightAccess = entityType.getInFlightAccess();
 
         Collection<ForeignKey> foreignKeys = table.getForeignKeys().values();
         List<EntityTypeImpl<Object>> joinEntityTypes = foreignKeys.stream()
             .map(foreignKey -> {
                 Table joinTable = foreignKey.getReferencedTable();
-                return initEntity(joinTable, metadataBuildingContext, sessionFactory);
+                return initEntity(joinTable, metadataBuildingContext, sessionFactory, mappingMetamodel);
             })
             .toList();
 
@@ -185,7 +251,7 @@ public class DMLUtils {
             .toList();
         Collection<Column> rootColumns = table.getColumns();
         for (EntityTypeImpl<Object> joinEntityType : joinEntityTypes) {
-            MetadataContext metadataContext = metadataContext();
+            MetadataContext metadataContext = metadataContext(entityType);
             SingularAttributeImpl<Object, Object> attribute = new SingularAttributeImpl<>(
                 entityType,
                 joinEntityType.getName(),
@@ -230,18 +296,18 @@ public class DMLUtils {
                 false,
                 rootColumn.isNullable(),
                 false,
-                metadataContext()
+                metadataContext(entityType)
             );
             inFlightAccess.addAttribute(attribute);
         }
         return entityType;
     }
 
-    private MetadataContext metadataContext() {
+    private MetadataContext metadataContext(EntityTypeImpl<?> entityType) {
         return new MetadataContext(
             integrator.getSessionFactory().getJpaMetamodel(),
             integrator.getSessionFactory().getMappingMetamodel(),
-            integrator.getInFlightMetadataCollector(),
+            ((MetadataImplementor) integrator.getMetadata()),
             JpaStaticMetaModelPopulationSetting.DISABLED,
             JpaMetaModelPopulationSetting.DISABLED,
             runtimeModelCreationContext()
@@ -249,73 +315,105 @@ public class DMLUtils {
     }
 
     private RuntimeModelCreationContext runtimeModelCreationContext() {
-        return new RuntimeModelCreationContext() {
-            @Override
-            public BootstrapContext getBootstrapContext() {
-                return integrator.getBootstrapContext();
-            }
+        if (Objects.isNull(runtimeModelCreationContext)) {
+            runtimeModelCreationContext = new RuntimeModelCreationContext() {
+                @Override
+                public BootstrapContext getBootstrapContext() {
+                    return integrator.getBootstrapContext();
+                }
 
-            @Override
-            public SessionFactoryImplementor getSessionFactory() {
-                // this is bad, we're not yet fully-initialized
-                return integrator.getSessionFactory();
-            }
+                @Override
+                public SessionFactoryImplementor getSessionFactory() {
+                    // this is bad, we're not yet fully-initialized
+                    return new SessionFactoryDelegatingImpl(integrator.getSessionFactory()) {
+                        @Override
+                        public @UnknownKeyFor @NonNull @Initialized Generator getGenerator(@UnknownKeyFor @NonNull @Initialized String rootEntityName) {
+                            return new Assigned();
+                        }
 
-            @Override
-            public MetadataImplementor getBootModel() {
-                return integrator.getInFlightMetadataCollector();
-            }
+                        @Override
+                        public @UnknownKeyFor @NonNull @Initialized RuntimeMetamodelsImplementor getRuntimeMetamodels() {
+                            RuntimeMetamodelsImpl runtimeMetamodels = new RuntimeMetamodelsImpl();
+                            runtimeMetamodels.setMappingMetamodel(mappingMetamodel);
+                            runtimeMetamodels.setJpaMetamodel(jpaMetamodel);
+                            return runtimeMetamodels;
+                        }
+                    };
+                }
 
-            @Override
-            public MappingMetamodelImplementor getDomainModel() {
-                return integrator.getSessionFactory().getMappingMetamodel();
-            }
+                @Override
+                public MetadataImplementor getBootModel() {
+                    return new AbstractDelegatingMetadata((MetadataImplementor) integrator.getMetadata()) {
+                        @Override
+                        public Collection<PersistentClass> getEntityBindings() {
+                            return persistentClasses;
+                        }
 
-            @Override
-            public CacheImplementor getCache() {
-                return new DisabledCaching(integrator.getSessionFactory());
-            }
+                        @Override
+                        public PersistentClass getEntityBinding(String entityName) {
+                            return getEntityBindings().stream()
+                                .filter(persistentClass -> StringUtils.equals(persistentClass.getEntityName(), entityName))
+                                .findFirst().orElse(null);
+                        }
+                    };
+                }
 
-            @Override
-            public Map<String, Object> getSettings() {
-                return Map.of();
-            }
+                @Override
+                public MappingMetamodelImplementor getDomainModel() {
+                    return mappingMetamodel;
+//                    return integrator.getSessionFactory().getMappingMetamodel();
+                }
 
-            @Override
-            public Dialect getDialect() {
-                return getJdbcServices().getDialect();
-            }
+                @Override
+                public CacheImplementor getCache() {
+                    return new DisabledCaching(integrator.getSessionFactory());
+                }
 
-            @Override
-            public SqmFunctionRegistry getFunctionRegistry() {
-                return integrator.getSessionFactory().getQueryEngine().getSqmFunctionRegistry();
-            }
+                @Override
+                public Map<String, Object> getSettings() {
+                    return Map.of(
+//                        "hibernate.jpa.static_metamodel.population", "DISABLED",
+//                        "hibernate.jpa.metamodel.population", "DISABLED"
+                    );
+                }
 
-            @Override
-            public TypeConfiguration getTypeConfiguration() {
-                return integrator.getDatabase().getTypeConfiguration();
-            }
+                @Override
+                public Dialect getDialect() {
+                    return getJdbcServices().getDialect();
+                }
 
-            @Override
-            public SessionFactoryOptions getSessionFactoryOptions() {
-                return integrator.getSessionFactory().getSessionFactoryOptions();
-            }
+                @Override
+                public SqmFunctionRegistry getFunctionRegistry() {
+                    return integrator.getSessionFactory().getQueryEngine().getSqmFunctionRegistry();
+                }
 
-            @Override
-            public JdbcServices getJdbcServices() {
-                return integrator.getSessionFactory().getJdbcServices();
-            }
+                @Override
+                public TypeConfiguration getTypeConfiguration() {
+                    return integrator.getDatabase().getTypeConfiguration();
+                }
 
-            @Override
-            public SqlStringGenerationContext getSqlStringGenerationContext() {
-                return integrator.getSessionFactory().getSqlStringGenerationContext();
-            }
+                @Override
+                public SessionFactoryOptions getSessionFactoryOptions() {
+                    return integrator.getSessionFactory().getSessionFactoryOptions();
+                }
 
-            @Override
-            public ServiceRegistry getServiceRegistry() {
-                return integrator.getDatabase().getServiceRegistry();
-            }
-        };
+                @Override
+                public JdbcServices getJdbcServices() {
+                    return integrator.getSessionFactory().getJdbcServices();
+                }
+
+                @Override
+                public SqlStringGenerationContext getSqlStringGenerationContext() {
+                    return integrator.getSessionFactory().getSqlStringGenerationContext();
+                }
+
+                @Override
+                public ServiceRegistry getServiceRegistry() {
+                    return integrator.getDatabase().getServiceRegistry();
+                }
+            };
+        }
+        return runtimeModelCreationContext;
     }
 
     /**
@@ -458,7 +556,9 @@ public class DMLUtils {
 
             SqmSelectStatement<?> sqmSelectStatement = (SqmSelectStatement<?>) criteriaQuery;
             SqmSelectionQueryImpl<?> sqmSelectionQuery = new SqmSelectionQueryImpl<>(sqmSelectStatement, null, _ref.em.unwrap(SharedSessionContractImplementor.class));
-            sqmSelectionQuery.setPage(Page.page(pageSize, Math.max(pageNumber - firstPageNumber, 0)));
+            if (Objects.nonNull(pageSize)) {
+                sqmSelectionQuery.setPage(Page.page(pageSize, Math.max(pageNumber - firstPageNumber, 0)));
+            }
             // Note: sqmStatement is different from sqmSelectStatement, it is a copy of sqmSelectStatement
             SqmSelectStatement<?> sqmStatement = sqmSelectionQuery.getSqmStatement();
             if (Objects.isNull(sqmTranslatorFactory)) {
@@ -470,7 +570,35 @@ public class DMLUtils {
                 sqmSelectionQuery.getDomainParameterXref(),
                 sqmSelectionQuery.getQueryParameterBindings(),
                 sqmSelectionQuery.getLoadQueryInfluencers(),
-                sqmSelectionQuery.getSessionFactory(),
+                new SqlAstCreationContext() {
+                    @Override
+                    public SessionFactoryImplementor getSessionFactory() {
+                        return new SessionFactoryDelegatingImpl(_ref.runtimeModelCreationContext.getSessionFactory()) {
+                            @Override
+                            public @UnknownKeyFor @NonNull @Initialized RuntimeMetamodelsImplementor getRuntimeMetamodels() {
+                                RuntimeMetamodelsImpl runtimeMetamodels = new RuntimeMetamodelsImpl();
+                                runtimeMetamodels.setJpaMetamodel(getJpaMetamodel());
+                                runtimeMetamodels.setMappingMetamodel(_ref.runtimeModelCreationContext.getDomainModel());
+                                return runtimeMetamodels;
+                            }
+                        };
+                    }
+
+                    @Override
+                    public MappingMetamodelImplementor getMappingMetamodel() {
+                        return _ref.runtimeModelCreationContext.getDomainModel();
+                    }
+
+                    @Override
+                    public ServiceRegistry getServiceRegistry() {
+                        return _ref.runtimeModelCreationContext.getServiceRegistry();
+                    }
+
+                    @Override
+                    public Integer getMaximumFetchDepth() {
+                        return 0;
+                    }
+                },
                 false
             );
 
@@ -809,7 +937,7 @@ public class DMLUtils {
             SqmInsertValuesStatement<Object> criteria = nb.createCriteriaInsertValues(Object.class);
             SqmRoot<Object> root = new SqmRoot<>(((EntityDomainType<Object>) entityType), null, false, nb);
             criteria.setTarget(root);
-            insertConsumer.accept(root, criteria, cb);
+            insertConsumer.accept(root, criteria, nb);
             SqmTranslatorFactory sqmTranslatorFactory = dialect.getSqmTranslatorFactory();
             if (Objects.isNull(sqmTranslatorFactory)) {
                 sqmTranslatorFactory = new StandardSqmTranslatorFactory();
@@ -957,7 +1085,7 @@ public class DMLUtils {
     }
 
     public interface InsertConsumer {
-        void accept(JpaRoot<Object> root, JpaCriteriaInsertValues<?> insert, CriteriaBuilder cb);
+        void accept(JpaRoot<Object> root, JpaCriteriaInsertValues<?> insert, NodeBuilder nb);
 
         default InsertConsumer andThen(InsertConsumer after) {
             return (root, insert, cb) -> {

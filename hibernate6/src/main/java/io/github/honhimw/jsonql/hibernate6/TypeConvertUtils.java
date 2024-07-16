@@ -3,6 +3,10 @@ package io.github.honhimw.jsonql.hibernate6;
 import org.hibernate.type.BasicTypeReference;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.type.StandardBasicTypes;
+import org.hibernate.type.Type;
+import org.hibernate.type.descriptor.java.*;
+import org.hibernate.type.descriptor.jdbc.*;
+import org.hibernate.type.internal.NamedBasicTypeImpl;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -95,7 +99,7 @@ public class TypeConvertUtils {
         javaJDBCTypeMap.put(Date.class, JDBCType.valueOf(StandardBasicTypes.DATE.getSqlTypeCode()));
         javaJDBCTypeMap.put(LocalDate.class, JDBCType.valueOf(StandardBasicTypes.LOCAL_DATE.getSqlTypeCode()));
         javaJDBCTypeMap.put(LocalDateTime.class, JDBCType.valueOf(StandardBasicTypes.LOCAL_DATE_TIME.getSqlTypeCode()));
-        javaJDBCTypeMap.put(Instant.class, JDBCType.valueOf(StandardBasicTypes.INSTANT.getSqlTypeCode()));
+//        javaJDBCTypeMap.put(Instant.class, JDBCType.valueOf(StandardBasicTypes.INSTANT.getSqlTypeCode()));
         javaJDBCTypeMap.put(BigInteger.class, JDBCType.valueOf(StandardBasicTypes.BIG_INTEGER.getSqlTypeCode()));
         javaJDBCTypeMap.put(BigDecimal.class, JDBCType.valueOf(StandardBasicTypes.BIG_DECIMAL.getSqlTypeCode()));
         JAVA_TYPE_JDBC_TYPE_MAP = Map.copyOf(javaJDBCTypeMap);
@@ -166,11 +170,28 @@ public class TypeConvertUtils {
         return switch (jdbcType) {
             case BOOLEAN -> "boolean";
             case INTEGER -> "i32";
-            case DOUBLE -> "double";
             case BIGINT -> "i64";
+            case DOUBLE -> "double";
             case VARCHAR -> "varchar";
             case LONGVARCHAR -> "text";
             case TIMESTAMP -> "date";
+            default -> throw new IllegalArgumentException("unsupported type: %s".formatted(jdbcType.getName()));
+        };
+    }
+
+    public static Type jdbc2HType(int jdbcType) {
+        return jdbc2HType(JDBCType.valueOf(jdbcType));
+    }
+
+    public static Type jdbc2HType(JDBCType jdbcType) {
+        return switch (jdbcType) {
+            case BOOLEAN -> new NamedBasicTypeImpl<>(BooleanJavaType.INSTANCE, BooleanJdbcType.INSTANCE, StandardBasicTypes.BOOLEAN.getName());
+            case INTEGER -> new NamedBasicTypeImpl<>(IntegerJavaType.INSTANCE, IntegerJdbcType.INSTANCE, StandardBasicTypes.INTEGER.getName());
+            case DOUBLE -> new NamedBasicTypeImpl<>(DoubleJavaType.INSTANCE, NumericJdbcType.INSTANCE, StandardBasicTypes.DOUBLE.getName());
+            case BIGINT -> new NamedBasicTypeImpl<>(BigIntegerJavaType.INSTANCE, BigIntJdbcType.INSTANCE, StandardBasicTypes.BIG_INTEGER.getName());
+            case VARCHAR, NVARCHAR -> new NamedBasicTypeImpl<>(StringJavaType.INSTANCE, NVarcharJdbcType.INSTANCE, StandardBasicTypes.NSTRING.getName());
+            case LONGVARCHAR, LONGNVARCHAR -> new NamedBasicTypeImpl<>(StringJavaType.INSTANCE, LongVarcharJdbcType.INSTANCE, StandardBasicTypes.NTEXT.getName());
+            case TIMESTAMP -> new NamedBasicTypeImpl<>(JdbcTimestampJavaType.INSTANCE, TimestampJdbcType.INSTANCE, StandardBasicTypes.TIMESTAMP.getName());
             default -> throw new IllegalArgumentException("unsupported type: %s".formatted(jdbcType.getName()));
         };
     }

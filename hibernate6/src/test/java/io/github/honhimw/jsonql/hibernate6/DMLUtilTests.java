@@ -1,7 +1,10 @@
 package io.github.honhimw.jsonql.hibernate6;
 
 import lombok.SneakyThrows;
+import org.h2.engine.Mode;
 import org.hibernate.mapping.Table;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -10,6 +13,22 @@ import org.junit.jupiter.api.Test;
  */
 
 public class DMLUtilTests extends DataSourceBase {
+
+    @BeforeAll
+    static void init() {
+        Mode.ModeEnum mode = Mode.ModeEnum.MSSQLServer;
+        String url = "jdbc:h2:mem:test;MODE\\=%s;DB_CLOSE_DELAY\\=-1;IGNORECASE\\=FALSE;DATABASE_TO_UPPER\\=FALSE".formatted(mode.name());
+        buildDatasource(
+            "org.h2.Driver",
+            url,
+            null, null
+        );
+    }
+
+    @AfterAll
+    static void clean() {
+        destroyDatasource();
+    }
 
     @Test
     @SneakyThrows

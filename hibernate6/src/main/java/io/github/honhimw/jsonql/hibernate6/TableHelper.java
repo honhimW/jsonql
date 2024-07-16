@@ -43,7 +43,7 @@ public class TableHelper {
         column.setNullable(col.nullable());
         column.setDefaultValue(col.defaultValue());
         if (Objects.nonNull(col.type())) {
-            SimpleValue value = new Any(metadataBuildingContext, _table);
+            BasicValue value = new BasicValue(metadataBuildingContext, _table);
             if (col.generated) {
                 value.setIdentifierGeneratorStrategy("native");
                 _table.setIdentifierValue(value);
@@ -54,6 +54,11 @@ public class TableHelper {
         }
         if (col.privateKey()) {
             PrimaryKey primaryKey = _table.getPrimaryKey();
+            if (Objects.isNull(primaryKey)) {
+                primaryKey = new PrimaryKey(_table);
+                primaryKey.setName("pk");
+                _table.setPrimaryKey(primaryKey);
+            }
             String primaryKeyName = primaryKey.getName();
             primaryKeyName += "_" + col.name();
             primaryKey.setName(primaryKeyName);
@@ -163,20 +168,20 @@ public class TableHelper {
         }
 
         public ColumnBuilder type(int type) {
-            this.type = TypeConvertUtils.type2hibernate(type);
+            this.type = TypeConvertUtils.jdbc2HType(type);
             return this;
         }
 
         public ColumnBuilder type(Class<?> type) {
             if (Objects.nonNull(type)) {
-                this.type = TypeConvertUtils.type2hibernate(type);
+                this.type = TypeConvertUtils.jdbc2HType(TypeConvertUtils.type2jdbc(type));
             }
             return this;
         }
 
         public ColumnBuilder type(SQLType type) {
             if (Objects.nonNull(type)) {
-                this.type = TypeConvertUtils.jdbc2hibernate(type);
+                this.type = TypeConvertUtils.jdbc2HType(type.getVendorTypeNumber());
             }
             return this;
         }

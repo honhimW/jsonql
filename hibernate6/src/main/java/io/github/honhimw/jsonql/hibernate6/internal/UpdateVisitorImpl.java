@@ -9,12 +9,12 @@ import io.github.honhimw.jsonql.common.visitor.UpdateVisitor;
 import io.github.honhimw.jsonql.common.visitor.WhereVisitor;
 import io.github.honhimw.jsonql.hibernate6.CompileUtils;
 import io.github.honhimw.jsonql.hibernate6.DMLUtils;
+import io.github.honhimw.jsonql.hibernate6.TypeConvertUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
 import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.Table;
-import org.hibernate.type.Type;
 
 import java.util.Objects;
 
@@ -57,9 +57,7 @@ class UpdateVisitorImpl extends UpdateVisitor {
         Validate.validState(Objects.nonNull(column), "column named: [%s] is not exists.".formatted(name));
         String columnName = column.getName();
 
-        Type type = column.getValue().getType();
-//        Object unwrapValue = tryCompatibility(name, type, value);
-        CompileUtils.typeValidate(name, type, value, column.isNullable());
+        CompileUtils.typeValidate(name, TypeConvertUtils.type2hibernate(column.getTypeCode()), value, column.isNullable());
         Object unwrapValue = CompileUtils.unwrapNode(value);
         if (value.isTextual() && unwrapValue instanceof String stringValue) {
             unwrapValue = ctx.renderContext(stringValue);

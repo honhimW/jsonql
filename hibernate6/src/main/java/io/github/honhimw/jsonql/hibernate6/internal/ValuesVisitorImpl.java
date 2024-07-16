@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jdi.*;
 import io.github.honhimw.jsonql.common.visitor.ValuesVisitor;
 import io.github.honhimw.jsonql.hibernate6.CompileUtils;
+import io.github.honhimw.jsonql.hibernate6.TypeConvertUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
 import org.hibernate.boot.model.naming.Identifier;
@@ -31,15 +32,17 @@ final class ValuesVisitorImpl extends ValuesVisitor {
         Column column = ctx.getRootTable().getColumn(Identifier.toIdentifier(CompileUtils.getFinalFieldName(name)));
         Validate.validState(Objects.nonNull(column), "column named: [%s] is not exists.".formatted(name));
         String columnName = column.getName();
-        Type type = column.getValue().getType();
-//        Object unwrapValue = tryCompatibility(name, type, value);
-        CompileUtils.typeValidate(name, type, value, column.isNullable());
+        CompileUtils.typeValidate(name, TypeConvertUtils.type2hibernate(column.getTypeCode()), value, column.isNullable());
         Object unwrapValue = CompileUtils.unwrapNode(value);
         if (value.isTextual() && unwrapValue instanceof String stringValue) {
             unwrapValue = ctx.renderContext(stringValue);
         }
         final Object finalValue = unwrapValue;
-        ctx.configurerInsert(insertBuilder -> insertBuilder.applyInsert((root, insert, cb) -> insert.value(root.get(columnName), finalValue)));
+        ctx.configurerInsert(insertBuilder -> insertBuilder.applyInsert((root, insert, nb) -> insert
+            .values(nb.values(nb.value(finalValue)))
+            .setInsertionTargetPaths(root.get(columnName))
+
+        ));
     }
 
     @Override
