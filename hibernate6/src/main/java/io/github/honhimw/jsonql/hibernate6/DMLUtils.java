@@ -21,6 +21,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Validate;
 import org.checkerframework.checker.initialization.qual.Initialized;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.UnknownKeyFor;
 import org.hibernate.SharedSessionContract;
 import org.hibernate.boot.Metadata;
@@ -37,7 +38,7 @@ import org.hibernate.engine.spi.SessionFactoryDelegatingImpl;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.generator.Generator;
-import org.hibernate.id.Assigned;
+import org.hibernate.id.IdentityGenerator;
 import org.hibernate.mapping.*;
 import org.hibernate.metamodel.internal.RuntimeMetamodelsImpl;
 import org.hibernate.metamodel.mapping.MappingModelExpressible;
@@ -48,9 +49,7 @@ import org.hibernate.metamodel.spi.MappingMetamodelImplementor;
 import org.hibernate.metamodel.spi.RuntimeMetamodelsImplementor;
 import org.hibernate.metamodel.spi.RuntimeModelCreationContext;
 import org.hibernate.query.Page;
-import org.hibernate.query.criteria.JpaCriteriaInsertValues;
-import org.hibernate.query.criteria.JpaFunction;
-import org.hibernate.query.criteria.JpaRoot;
+import org.hibernate.query.criteria.*;
 import org.hibernate.query.internal.ParameterMetadataImpl;
 import org.hibernate.query.internal.QueryParameterBindingsImpl;
 import org.hibernate.query.spi.Limit;
@@ -58,8 +57,10 @@ import org.hibernate.query.spi.QueryOptions;
 import org.hibernate.query.spi.QueryParameterBindings;
 import org.hibernate.query.spi.QueryParameterImplementor;
 import org.hibernate.query.sqm.NodeBuilder;
+import org.hibernate.query.sqm.SqmQuerySource;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.query.sqm.internal.DomainParameterXref;
+import org.hibernate.query.sqm.internal.NoParamSqmCopyContext;
 import org.hibernate.query.sqm.internal.SqmSelectionQueryImpl;
 import org.hibernate.query.sqm.internal.SqmUtil;
 import org.hibernate.query.sqm.spi.SqmParameterMappingModelResolutionAccess;
@@ -95,6 +96,7 @@ import java.util.Set;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * @author hon_him
@@ -228,7 +230,8 @@ public class DMLUtils {
                     return new SessionFactoryDelegatingImpl(integrator.getSessionFactory()) {
                         @Override
                         public @UnknownKeyFor @NonNull @Initialized Generator getGenerator(@UnknownKeyFor @NonNull @Initialized String rootEntityName) {
-                            return new Assigned();
+//                            return new Assigned();
+                            return new IdentityGenerator();
                         }
                     };
                 }
@@ -746,7 +749,9 @@ public class DMLUtils {
         }
 
         public SQLHolder jdbcQL() {
-            CriteriaUpdate<Object> criteria = cb.createCriteriaUpdate(Object.class);
+            NodeBuilder nb = (NodeBuilder) cb;
+            SqmRoot<Object> root = new SqmRoot<>(((EntityDomainType<Object>) entityType), null, false, nb);
+            CriteriaUpdate<Object> criteria = new SqmUpdateStatement<>(nb, SqmQuerySource.CRITERIA, new HashSet<>(), new HashMap<>(), root);
             Root<Object> from = criteria.from(entityType);
             updateConsumer.accept(from, criteria, cb);
             SqmUpdateStatement<?> sqmUpdateStatement = (SqmUpdateStatement<?>) criteria;
@@ -755,7 +760,12 @@ public class DMLUtils {
                 sqmTranslatorFactory = new StandardSqmTranslatorFactory();
             }
             try {
-                SQLHolder sqlHolder = mutationStatement(sqmUpdateStatement, _ref.integrator, sqmTranslatorFactory, dialect.getSqlAstTranslatorFactory());
+                SQLHolder sqlHolder = _ref.mutationStatement(
+                    sqmUpdateStatement,
+                    _ref.integrator,
+                    sqmTranslatorFactory,
+                    dialect.getSqlAstTranslatorFactory()
+                );
                 if (log.isDebugEnabled()) {
                     log.debug("jdbc QL: {}", sqlHolder.sql());
                 }
@@ -825,16 +835,26 @@ public class DMLUtils {
 
         public SQLHolder jdbcQL() {
             NodeBuilder nb = (NodeBuilder) cb;
-            SqmInsertValuesStatement<Object> criteria = nb.createCriteriaInsertValues(Object.class);
             SqmRoot<Object> root = new SqmRoot<>(((EntityDomainType<Object>) entityType), null, false, nb);
+            SqmInsertValuesStatement<Object> criteria = new SqmInsertValuesStatement<>(root, nb) {
+                @Override
+                public SqmQuerySource getQuerySource() {
+                    return SqmQuerySource.CRITERIA;
+                }
+            }.copy(new NoParamSqmCopyContext());
             criteria.setTarget(root);
-            insertConsumer.accept(root, criteria, nb);
+            insertConsumer.accept(root, new DelegateSqmInsertValuesStatement<>(criteria), nb);
             SqmTranslatorFactory sqmTranslatorFactory = dialect.getSqmTranslatorFactory();
             if (Objects.isNull(sqmTranslatorFactory)) {
                 sqmTranslatorFactory = new StandardSqmTranslatorFactory();
             }
             try {
-                SQLHolder sqlHolder = mutationStatement(criteria, _ref.integrator, sqmTranslatorFactory, dialect.getSqlAstTranslatorFactory());
+                SQLHolder sqlHolder = _ref.mutationStatement(
+                    criteria,
+                    _ref.integrator,
+                    sqmTranslatorFactory,
+                    dialect.getSqlAstTranslatorFactory()
+                );
                 if (log.isDebugEnabled()) {
                     log.debug("jdbc QL: {}", sqlHolder.sql());
                 }
@@ -912,7 +932,9 @@ public class DMLUtils {
         }
 
         public SQLHolder jdbcQL() {
-            CriteriaDelete<Object> criteria = cb.createCriteriaDelete(Object.class);
+            NodeBuilder nb = (NodeBuilder) cb;
+            SqmRoot<Object> root = new SqmRoot<>(((EntityDomainType<Object>) entityType), null, false, nb);
+            CriteriaDelete<Object> criteria = new SqmDeleteStatement<>(nb, SqmQuerySource.CRITERIA, new HashSet<>(), new HashMap<>(), root);
             Root<Object> from = criteria.from(entityType);
             deleteConsumer.accept(from, criteria, cb);
             SqmDeleteStatement<?> sqmDmlStatement = (SqmDeleteStatement<?>) criteria;
@@ -921,7 +943,12 @@ public class DMLUtils {
                 sqmTranslatorFactory = new StandardSqmTranslatorFactory();
             }
             try {
-                SQLHolder sqlHolder = mutationStatement(sqmDmlStatement, _ref.integrator, sqmTranslatorFactory, dialect.getSqlAstTranslatorFactory());
+                SQLHolder sqlHolder = _ref.mutationStatement(
+                    sqmDmlStatement,
+                    _ref.integrator,
+                    sqmTranslatorFactory,
+                    dialect.getSqlAstTranslatorFactory()
+                );
                 if (log.isDebugEnabled()) {
                     log.debug("jdbc QL: {}", sqlHolder.sql());
                 }
@@ -976,7 +1003,7 @@ public class DMLUtils {
     }
 
     public interface InsertConsumer {
-        void accept(JpaRoot<Object> root, JpaCriteriaInsertValues<?> insert, NodeBuilder nb);
+        void accept(JpaRoot<Object> root, IJpaCriteriaInsertValues<?> insert, NodeBuilder nb);
 
         default InsertConsumer andThen(InsertConsumer after) {
             return (root, insert, cb) -> {
@@ -1065,7 +1092,7 @@ public class DMLUtils {
         return sb.toString();
     }
 
-    private static SQLHolder mutationStatement(
+    private SQLHolder mutationStatement(
         SqmDmlStatement<?> sqmDmlStatement,
         MetadataExtractorIntegrator integrator,
         SqmTranslatorFactory sqmTranslatorFactory,
@@ -1078,7 +1105,7 @@ public class DMLUtils {
             : ParameterMetadataImpl.EMPTY;
         QueryParameterBindingsImpl parameterBindings = QueryParameterBindingsImpl.from(parameterMetadata, integrator.getSessionFactory());
 
-        SharedSessionContractImplementor sharedSessionContractImplementor = integrator.getSessionFactory().unwrap(SharedSessionContractImplementor.class);
+        SharedSessionContractImplementor sharedSessionContractImplementor = em.unwrap(SharedSessionContractImplementor.class);
 
         for (SqmParameter<?> sqmParameter : domainParameterXref.getParameterResolutions().getSqmParameters()) {
             if (sqmParameter instanceof SqmJpaCriteriaParameterWrapper<?>) {
@@ -1092,9 +1119,35 @@ public class DMLUtils {
             domainParameterXref,
             parameterBindings,
             sharedSessionContractImplementor.getLoadQueryInfluencers(),
-            integrator.getSessionFactory()
-        );
+            new SqlAstCreationContext() {
+                @Override
+                public SessionFactoryImplementor getSessionFactory() {
+                    return new SessionFactoryDelegatingImpl(runtimeModelCreationContext.getSessionFactory()) {
+                        @Override
+                        public @UnknownKeyFor @NonNull @Initialized RuntimeMetamodelsImplementor getRuntimeMetamodels() {
+                            RuntimeMetamodelsImpl runtimeMetamodels = new RuntimeMetamodelsImpl();
+                            runtimeMetamodels.setJpaMetamodel(getJpaMetamodel());
+                            runtimeMetamodels.setMappingMetamodel(runtimeModelCreationContext.getDomainModel());
+                            return runtimeMetamodels;
+                        }
+                    };
+                }
 
+                @Override
+                public MappingMetamodelImplementor getMappingMetamodel() {
+                    return runtimeModelCreationContext.getDomainModel();
+                }
+
+                @Override
+                public ServiceRegistry getServiceRegistry() {
+                    return runtimeModelCreationContext.getServiceRegistry();
+                }
+
+                @Override
+                public Integer getMaximumFetchDepth() {
+                    return 0;
+                }
+            });
 
         SqmTranslation<? extends MutationStatement> sqmTranslation = mutationTranslator.translate();
         MutationStatement sqlAst = sqmTranslation.getSqlAst();
@@ -1178,6 +1231,131 @@ public class DMLUtils {
 
         public T2 _2() {
             return _2;
+        }
+    }
+
+    public interface IJpaCriteriaInsertValues<T> extends JpaCriteriaInsertValues<T> {
+        @Override
+        IJpaCriteriaInsertValues<T> setInsertionTargetPaths(Path<?>... insertionTargetPaths);
+
+        @Override
+        IJpaCriteriaInsertValues<T> setInsertionTargetPaths(List<? extends Path<?>> insertionTargetPaths);
+
+    }
+
+    private static class DelegateSqmInsertValuesStatement<T> implements IJpaCriteriaInsertValues<T> {
+        private final JpaCriteriaInsertValues<T> delegate;
+
+        public DelegateSqmInsertValuesStatement(JpaCriteriaInsertValues<T> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public JpaCriteriaInsertValues<T> values(JpaValues... values) {
+            return delegate.values(values);
+        }
+
+        @Override
+        public JpaCriteriaInsertValues<T> values(List<? extends JpaValues> values) {
+            return delegate.values(values);
+        }
+
+        @Override
+        public JpaCriteriaInsertValues<T> onConflict(JpaConflictClause<T> conflictClause) {
+            return delegate.onConflict(conflictClause);
+        }
+
+        @Override
+        public List<? extends JpaPath<?>> getInsertionTargetPaths() {
+            return delegate.getInsertionTargetPaths();
+        }
+
+        @Override
+        public IJpaCriteriaInsertValues<T> setInsertionTargetPaths(Path<?>... insertionTargetPaths) {
+            delegate.setInsertionTargetPaths(insertionTargetPaths);
+            return this;
+        }
+
+        @Override
+        public IJpaCriteriaInsertValues<T> setInsertionTargetPaths(List<? extends Path<?>> insertionTargetPaths) {
+            delegate.setInsertionTargetPaths(insertionTargetPaths);
+            return this;
+        }
+
+        @Override
+        public JpaConflictClause<T> onConflict() {
+            return delegate.onConflict();
+        }
+
+        @Override
+        @Nullable
+        public JpaConflictClause<T> getConflictClause() {
+            return delegate.getConflictClause();
+        }
+
+        @Override
+        public JpaConflictClause<T> createConflictClause() {
+            return delegate.createConflictClause();
+        }
+
+        @Override
+        public JpaRoot<T> getTarget() {
+            return delegate.getTarget();
+        }
+
+        @Override
+        public void setTarget(JpaRoot<T> root) {
+            delegate.setTarget(root);
+        }
+
+        @Override
+        public <U> JpaSubQuery<U> subquery(Class<U> type) {
+            return delegate.subquery(type);
+        }
+
+        @Override
+        public JpaPredicate getRestriction() {
+            return delegate.getRestriction();
+        }
+
+        @Override
+        public Collection<? extends JpaCteCriteria<?>> getCteCriterias() {
+            return delegate.getCteCriterias();
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> getCteCriteria(String cteName) {
+            return delegate.getCteCriteria(cteName);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> with(AbstractQuery<T> criteria) {
+            return delegate.with(criteria);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> withRecursiveUnionAll(AbstractQuery<T> baseCriteria, Function<JpaCteCriteria<T>, AbstractQuery<T>> recursiveCriteriaProducer) {
+            return delegate.withRecursiveUnionAll(baseCriteria, recursiveCriteriaProducer);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> withRecursiveUnionDistinct(AbstractQuery<T> baseCriteria, Function<JpaCteCriteria<T>, AbstractQuery<T>> recursiveCriteriaProducer) {
+            return delegate.withRecursiveUnionDistinct(baseCriteria, recursiveCriteriaProducer);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> with(String name, AbstractQuery<T> criteria) {
+            return delegate.with(name, criteria);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> withRecursiveUnionAll(String name, AbstractQuery<T> baseCriteria, Function<JpaCteCriteria<T>, AbstractQuery<T>> recursiveCriteriaProducer) {
+            return delegate.withRecursiveUnionAll(name, baseCriteria, recursiveCriteriaProducer);
+        }
+
+        @Override
+        public <T> JpaCteCriteria<T> withRecursiveUnionDistinct(String name, AbstractQuery<T> baseCriteria, Function<JpaCteCriteria<T>, AbstractQuery<T>> recursiveCriteriaProducer) {
+            return delegate.withRecursiveUnionDistinct(name, baseCriteria, recursiveCriteriaProducer);
         }
     }
 

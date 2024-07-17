@@ -49,8 +49,35 @@ public class DMLUtilTests extends DataSourceBase {
         DMLUtils instance = DMLUtils.getInstance(em, table);
         SQLHolder sqlHolder = instance.update().applyUpdate((root, update, cb) -> {
             update.set(root.get("title"), "title")
-                .set(root.get("content"), "content")
+                .set(root.get("logo"), "https://some-logo.svg")
                 .where(cb.equal(root.get("id"), "1"));
+        }).jdbcQL();
+        log.info(sqlHolder.toString());
+    }
+
+    @Test
+    @SneakyThrows
+    void dmlDelete() {
+        Table table = TableSupports.get("brand_introduction");
+        DMLUtils instance = DMLUtils.getInstance(em, table);
+        SQLHolder sqlHolder = instance.delete().applyDelete((root, delete, cb) -> {
+            delete.where(cb.equal(root.get("id"), "1"));
+        }).jdbcQL();
+        log.info(sqlHolder.toString());
+    }
+
+    @Test
+    @SneakyThrows
+    void dmlInsert() {
+        Table table = TableSupports.get("brand_introduction");
+        DMLUtils instance = DMLUtils.getInstance(em, table);
+        SQLHolder sqlHolder = instance.insert().applyInsert((root, insert, nb) -> {
+            insert
+                .setInsertionTargetPaths(root.get("title"))
+                .values(
+                    nb.values(nb.value("foo")),
+                    nb.values(nb.value("bar"))
+                );
         }).jdbcQL();
         log.info(sqlHolder.toString());
     }
