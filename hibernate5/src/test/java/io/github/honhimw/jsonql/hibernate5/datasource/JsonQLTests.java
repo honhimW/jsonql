@@ -1,7 +1,6 @@
 package io.github.honhimw.jsonql.hibernate5.datasource;
 
 import io.github.honhimw.jsonql.hibernate5.ddl.HibernateOperations;
-import io.github.honhimw.jsonql.hibernate5.meta.SQLHolder;
 import io.github.honhimw.jsonql.hibernate5.supports.JsonQL;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +30,7 @@ public class JsonQLTests {
         Table brandIntroduction = TableSupports.get("brand_introduction");
         HibernateOperations hibernateOperations = HibernateOperations.forTable(brandIntroduction);
         List<String> create = hibernateOperations.createTable();
-        jsonQL.getSessionContract().doWork(connection -> {
+        jsonQL.getJsonQLContext().getSessionContract().doWork(connection -> {
             for (String sql : create) {
                 connection.prepareStatement(sql).execute();
             }
