@@ -2,4 +2,5 @@ rootProject.name = 'jsonql'
 include 'hibernate5'
 include 'common'
 include 'hibernate6'
+include 'query-dsl'
 

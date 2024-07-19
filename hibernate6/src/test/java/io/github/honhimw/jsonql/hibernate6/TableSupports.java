@@ -53,6 +53,9 @@ public class TableSupports {
             .addColumn(columnBuilder -> columnBuilder
                 .name("title")
                 .type(String.class))
+            .addColumn(columnBuilder -> columnBuilder
+                .name("brand")
+                .type(String.class))
             .build());
         tableMap.put("material", TableBuilder.builder("material")
             .addColumn(columnBuilder -> columnBuilder

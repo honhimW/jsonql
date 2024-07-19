@@ -19,6 +19,8 @@ public class MockTableMetaCache implements TableMetaCache {
 
     @Override
     public Table buildTable(String fullTableName) {
-        return tableMap.get(fullTableName);
+        Table table = tableMap.get(fullTableName);
+        // copy one to return
+        return table;
     }
 }

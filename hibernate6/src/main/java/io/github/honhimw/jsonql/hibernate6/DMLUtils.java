@@ -40,6 +40,7 @@ import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.generator.Generator;
 import org.hibernate.id.IdentityGenerator;
 import org.hibernate.mapping.*;
+import org.hibernate.mapping.Join;
 import org.hibernate.metamodel.internal.RuntimeMetamodelsImpl;
 import org.hibernate.metamodel.mapping.MappingModelExpressible;
 import org.hibernate.metamodel.model.domain.EntityDomainType;
@@ -179,9 +180,9 @@ public class DMLUtils {
 
     private final Map<String, PersistentClass> persistentClasses = new HashMap<>();
 
-    private void initEntity(Table table, MetadataBuildingContext metadataBuildingContext) {
+    private PersistentClass initEntity(Table table, MetadataBuildingContext metadataBuildingContext) {
         if (persistentClasses.containsKey(table.getName())) {
-            return;
+            return persistentClasses.get(table.getName());
         }
         RootClass rootClass = new RootClass(metadataBuildingContext);
         persistentClasses.put(table.getName(), rootClass);
@@ -204,6 +205,18 @@ public class DMLUtils {
             rootClass.addProperty(property);
         });
 
+        table.getForeignKeys().forEach((foreignKeyKey, foreignKey) -> {
+            Table referencedTable = foreignKey.getReferencedTable();
+            PersistentClass joinClass = initEntity(referencedTable, metadataBuildingContext);
+            Join join = new Join();
+            rootClass.addJoin(join);
+            join.setTable(referencedTable);
+            join.setPersistentClass(joinClass);
+            join.setKey(joinClass.getKey());
+            join.setOptional(true);
+//            joinClass.getProperties().forEach(join::addProperty);
+        });
+
         PrimaryKey _pk = _table.getPrimaryKey();
         Column column = _pk.getColumn(0);
         if (column.getValue() instanceof KeyValue kv) {
@@ -214,6 +227,7 @@ public class DMLUtils {
             rootClass.setIdentifierProperty(property);
             rootClass.setDeclaredIdentifierProperty(property);
         }
+        return rootClass;
     }
 
     private void runtimeModelCreationContext() {
